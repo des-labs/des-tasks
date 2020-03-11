@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: {{ taskType }}
+metadata:
+  name: {{ jobName }}
+  username: {{ username }}
+  jobId: {{ jobId }}
+  apiToken: {{ apiToken }}
+  apiBaseUrl: {{ apiBaseUrl }}
+  persistentVolumeClaim: {{ persistentVolumeClaim }}
+spec:
+  inputs:
+    queryString: {{ queryString }}
+  outputs:
+    log: {{ logFilePath }}
