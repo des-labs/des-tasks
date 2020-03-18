@@ -4,6 +4,11 @@ import yaml
 import os
 import requests
 import ea_tasks
+import rpdb
+# from Crypto.Cipher import AES
+# import base64
+
+SECRET = 'my_secret_key'
 
 try:
    input_file = sys.argv[1]
@@ -21,8 +26,12 @@ logging.basicConfig(
     ]
 )
 
+logging.info('Running  job:{} at {}'.format(
+   config['metadata']['name'], os.path.basename(__file__)))
+
 # Report that work has started
-logging.info("Reporting job start to jobhandler (apitoken: {})...".format(config['metadata']['apiToken']))
+logging.info("Reporting job start to jobhandler (apitoken: {})...".format(
+   config['metadata']['apiToken']))
 requests.post(
     '{}/job/start'.format(config['metadata']['apiBaseUrl']),
     json={
@@ -30,27 +39,35 @@ requests.post(
     }
 )
 
-query_string = config['spec']['inputs']['queryString']
-logging.info('********')
-logging.info('Running  job:{} at {}'.format(
-   config['metadata']['name'], os.path.basename(__file__)))
-logging.debug("This is a debug message")
-logging.info('Querying database:\n"{}"'.format(query_string))
+#############################
+# Primary task activity
+#############################
+debug_loop = True
+while debug_loop == True:
+    # Loop if debugging is activated, and pause execution
+    debug_loop = config['metadata']['debug']
+    if debug_loop:
+        logging.info('Debugging is enabled. Invoking RPDB...')
+        rpdb.set_trace()
+    # Query the Oracle database using easyaccess
+    query_string = config['spec']['inputs']['queryString']
+    logging.info('Querying database:\n"{}"'.format(query_string))
+    response = ea_tasks.check_query(
+        query_string,
+        'dessci',
+        config['metadata']['username'],
+        config['spec']['inputs']['dbPassword']
+    )
+    logging.info("Database query check response:\n{}".format(response))
 
-run = ea_tasks.check_query(
-    query_string,
-    db,
-    config['metadata']['username'],
-    lp.decode()
-)
-response = run
 
 # Report that work has completed
 logging.info("Reporting completion to jobhandler (apitoken: {})...".format(config['metadata']['apiToken']))
 requests.post(
     '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
     json={
-        'apitoken': config['metadata']['apiToken']
+        'apitoken': config['metadata']['apiToken'],
+        'response': response
     }
 )
 

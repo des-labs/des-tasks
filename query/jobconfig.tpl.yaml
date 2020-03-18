@@ -7,8 +7,10 @@ metadata:
   apiToken: {{ apiToken }}
   apiBaseUrl: {{ apiBaseUrl }}
   persistentVolumeClaim: {{ persistentVolumeClaim }}
+  debug: {{ debug }}
 spec:
   inputs:
     queryString: {{ queryString }}
+    dbPassword: {{ dbPassword }}
   outputs:
     log: {{ logFilePath }}

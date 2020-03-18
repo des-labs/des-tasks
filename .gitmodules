@@ -1,0 +1,4 @@
+[submodule "query/easyaccess"]
+	path = query/easyaccess
+	url = https://github.com/mgckind/easyaccess
+	branch = master
