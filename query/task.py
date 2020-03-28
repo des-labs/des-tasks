@@ -5,10 +5,6 @@ import os
 import requests
 import ea_tasks
 import rpdb
-# from Crypto.Cipher import AES
-# import base64
-
-SECRET = 'my_secret_key'
 
 try:
    input_file = sys.argv[1]
