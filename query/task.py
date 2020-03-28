@@ -52,7 +52,7 @@ while debug_loop == True:
         query_string,
         'dessci',
         config['metadata']['username'],
-        config['spec']['inputs']['dbPassword']
+        config['metadata']['password']
     )
     logging.info("Database query check response:\n{}".format(response))
 
