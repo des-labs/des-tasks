@@ -16,7 +16,7 @@ with open(input_file) as cfile:
 logging.basicConfig(
     level=logging.DEBUG,
     handlers=[
-        logging.FileHandler(config['spec']['outputs']['log']),
+        logging.FileHandler(config['metadata']['log']),
         logging.StreamHandler()
     ]
 )

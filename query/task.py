@@ -5,10 +5,6 @@ import os
 import requests
 import ea_tasks
 import rpdb
-# from Crypto.Cipher import AES
-# import base64
-
-SECRET = 'my_secret_key'
 
 try:
    input_file = sys.argv[1]
@@ -21,7 +17,7 @@ with open(input_file) as cfile:
 logging.basicConfig(
     level=logging.DEBUG,
     handlers=[
-        logging.FileHandler(config['spec']['outputs']['log']),
+        logging.FileHandler(config['metadata']['log']),
         logging.StreamHandler()
     ]
 )
@@ -56,7 +52,7 @@ while debug_loop == True:
         query_string,
         'dessci',
         config['metadata']['username'],
-        config['spec']['inputs']['dbPassword']
+        config['metadata']['password']
     )
     logging.info("Database query check response:\n{}".format(response))
 
