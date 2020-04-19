@@ -33,7 +33,8 @@ logging.info("Reporting completion to jobhandler (apitoken: {})...".format(confi
 requests.post(
     '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
     json={
-        'apitoken': config['metadata']['apiToken']
+        'apitoken': config['metadata']['apiToken'],
+        'response': 'Done in {} seconds'.format(t)
     }
 )
 
