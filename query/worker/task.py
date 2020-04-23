@@ -87,7 +87,6 @@ if __name__ == "__main__":
         ]
     )
 
-    logging.info(yaml.dump(config))
     # Report to the JobHandler that the job has begun
     task_start(config)
 

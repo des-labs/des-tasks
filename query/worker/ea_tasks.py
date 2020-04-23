@@ -5,6 +5,17 @@ import time
 import json
 import glob
 
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+DEFAULT_RESPONSE = {
+    'status': STATUS_OK,
+    'msg': '',
+    'elapsed': 0.0,
+    'data': {},
+    'files': [],
+    'sizes': []
+}
+
 def get_filesize(filename):
     size = os.path.getsize(filename)
     size = size * 1. / 1024.
@@ -16,36 +27,28 @@ def get_filesize(filename):
         size = '%.2f KB' % (size)
     return size
 
+
 def check_query(query, db, username, password):
-    response = {}
-    response['user'] = username
+    response = DEFAULT_RESPONSE
     try:
         connection = ea.connect(db, user=username, passwd=password)
         cursor = connection.cursor()
     except Exception as e:
-        response['status'] = 'error'
-        response['data'] = str(e).strip()
-        response['kind'] = 'check'
+        response['status'] = STATUS_ERROR
+        response['msg'] = str(e).strip()
         return response
     try:
         cursor.parse(query.encode())
-        response['status'] = 'ok'
-        response['data'] = 'Ok!'
-        response['kind'] = 'check'
     except Exception as e:
-        response['status'] = 'error'
-        response['data'] = str(e).strip()
-        response['kind'] = 'check'
+        response['status'] = STATUS_ERROR
+        response['msg'] = str(e).strip()
     cursor.close()
     connection.close()
     return response
 
 
 def run_quick(query, db, username, password):
-    response = {}
-    response['user'] = username
-    response['elapsed'] = 0
-
+    response = DEFAULT_RESPONSE
     try:
         connection = ea.connect(db, user=username, passwd=password)
         cursor = connection.cursor()
@@ -55,36 +58,28 @@ def run_quick(query, db, username, password):
         tt.start()
 
         if query.lower().lstrip().startswith('select'):
-            response['kind'] = 'select'
             try:
                 df = connection.query_to_pandas(query)
                 # df.to_csv(os.path.join(user_folder, 'quickResults.csv'), index=False)
                 df = df[0:1000]
                 data = df.to_json(orient='records')
-                response['status'] = 'ok'
                 response['data'] = data
             except Exception as e:
-                # logger.info('query job finished')
-                # logger.info(str(e).strip())
-                response['status'] = 'error'
                 err_out = str(e).strip()
                 if 'ORA-01013' in err_out:
                     err_out = 'Time Exceeded (30 seconds). Please try submitting the job'
-                response['data'] = err_out
-                response['kind'] = 'query'
+                response['status'] = STATUS_ERROR
+                response['msg'] = err_out
         else:
-            response['kind'] = 'query'
             try:
                 df = cursor.execute(query)
                 connection.con.commit()
-                response['status'] = 'ok'
-                response['data'] = 'Done! (See results below)'
             except Exception as e:
-                response['status'] = 'error'
                 err_out = str(e).strip()
                 if 'ORA-01013' in err_out:
                     err_out = 'Time Exceeded (30 seconds). Please try submitting this query as job'
-                response['data'] = err_out
+                response['status'] = STATUS_ERROR
+                response['msg'] = err_out
 
         # Stop the clock
         tt.cancel()
@@ -92,21 +87,15 @@ def run_quick(query, db, username, password):
         cursor.close()
         connection.close()
     except Exception as e:
-        response['status'] = 'error'
-        response['data'] = str(e).strip()
-        response['kind'] = 'query'
+        response['status'] = STATUS_ERROR
+        response['msg'] = str(e).strip()
         return response
 
     return response
 
 
 def run_query(query, db, username, password, job_folder, filename, timeout=None):
-    response = {}
-    response['status'] = 'ok'
-    response['kind'] = 'query'
-    response['user'] = username
-    response['elapsed'] = 0
-    response['data'] = {}
+    response = DEFAULT_RESPONSE
     if not os.path.exists(job_folder):
         os.mkdir(job_folder)
     jsonfile = os.path.join(job_folder, 'meta.json')
@@ -117,8 +106,8 @@ def run_query(query, db, username, password, job_folder, filename, timeout=None)
             connection = ea.connect(db, user=username, passwd=password)
             cursor = connection.cursor()
         except Exception as e:
-            response['status'] = 'error'
-            response['data'] = str(e).strip()
+            response['status'] = STATUS_ERROR
+            response['msg'] = str(e).strip()
             with open(jsonfile, 'w') as fp:
                 json.dump(response, fp)
             return response
@@ -126,7 +115,6 @@ def run_query(query, db, username, password, job_folder, filename, timeout=None)
             tt = threading.Timer(timeout, connection.con.cancel)
             tt.start()
         if query.lower().lstrip().startswith('select'):
-            response['kind'] = 'select'
             try:
                 outfile = os.path.join(job_folder, filename)
                 connection.query_and_save(query, outfile)
@@ -136,30 +124,26 @@ def run_query(query, db, username, password, job_folder, filename, timeout=None)
                 files = glob.glob(job_folder + '/*')
                 response['files'] = [os.path.basename(i) for i in files]
                 response['sizes'] = [get_filesize(i) for i in files]
-                response['data'] = 'Query complete.'
             except Exception as e:
                 if timeout is not None:
                     tt.cancel()
                 t2 = time.time()
-                response['status'] = 'error'
-                response['data'] = str(e).strip()
-                response['kind'] = 'query'
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
                 raise
         else:
-            response['kind'] = 'query'
             try:
                 cursor.execute(query)
                 connection.con.commit()
                 if timeout is not None:
                     tt.cancel()
                 t2 = time.time()
-                response['data'] = 'Query complete.'
             except Exception as e:
                 if timeout is not None:
                     tt.cancel()
                 t2 = time.time()
-                response['status'] = 'error'
-                response['data'] = str(e).strip()
+                response['status'] = STATUS_ERROR
+                response['msg'] = str(e).strip()
 
         response['elapsed'] = t2 - t1
         with open(jsonfile, 'w') as fp:
