@@ -2,3 +2,7 @@
 	path = query/easyaccess
 	url = https://github.com/mgckind/easyaccess
 	branch = master
+[submodule "cutout/easyaccess"]
+	path = cutout/easyaccess
+	url = https://github.com/mgckind/easyaccess
+	branch = master
