@@ -1,0 +1,8 @@
+inputs:
+    ra: 20.0035
+    dec: -26.767
+    make_fits: 'gri'
+    xsize: 5
+    ysize: 3
+    return_list: True
+    db: 'Y3A2'
