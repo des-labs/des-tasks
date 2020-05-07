@@ -41,17 +41,23 @@ RUN useradd --create-home --shell /bin/bash worker --uid 1001
 
 #RUN pip3 install --upgrade pip
 
+# The order of operation is important for code iteration, because building Docker
+# images takes time and we want to take advantage of caching.
+# First copy easyaccess and compile:
 WORKDIR /home/worker
-COPY --chown=worker:worker ./* ./
 COPY --chown=worker:worker ./easyaccess ./easyaccess
-
 WORKDIR /home/worker/easyaccess
 RUN python3 setup.py install
 
+# Next, install the required Python modules:
 USER worker
 WORKDIR /home/worker
-#COPY --chown=worker:worker requirements.txt requirements.txt
+COPY --chown=worker:worker ./worker/requirements.txt requirements.txt
 RUN pip3 install --user -r requirements.txt
+
+# Finally, copy in the files under the most active development:
+COPY --chown=worker:worker ./worker/* ./
+
 ENV PATH="/home/worker/.local/bin:${PATH}"
 ENV TMPDIR="/tmp"
 

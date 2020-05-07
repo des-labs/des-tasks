@@ -501,20 +501,19 @@ def run(args):
         else:
             jobid = str(uuid.uuid4())
 
-        outdir = OUTDIR #+ usernm + '/' + jobid + '/'
+        # outdir = OUTDIR #+ usernm + '/' + jobid + '/'
         outdir = args.outdir
+        OUTDIR = outdir
         print(outdir)
 
-        """
         try:
-            os.makedirs(outdir, exist_ok=False)
+            os.makedirs(outdir, exist_ok=True)
         except OSError as e:
             print(e)
             print('Specified jobid already exists in output directory. Aborting job.')
             conn.close()
             sys.stdout.flush()
             comm.Abort()
-        """
     else:
         usernm, jobid, outdir = None, None, None
         print('rank not zero')
@@ -524,7 +523,7 @@ def run(args):
     logtime = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     #logname = OUTDIR + 'BulkThumbs_' + logtime + '.log'
     #logname = outdir + 'BulkThumbs_' + logtime + '.log'
-    logname = outdir + 'log.log'
+    logname = outdir + '/' + 'log.log'
     formatter = logging.Formatter('%(asctime)s - '+str(rank)+' - %(levelname)-8s - %(message)s')
 
     logger = logging.getLogger(__name__)
@@ -544,7 +543,7 @@ def run(args):
         start = time.time()
 
         logger.info('Selected Options:')
-
+        logger.info('all args: {}'.format(args))
         # This puts any input type into a pandas dataframe
         if args.csv:
             userdf = pd.DataFrame(pd.read_csv(args.csv))

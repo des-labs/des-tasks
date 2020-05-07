@@ -1,8 +1,16 @@
 inputs:
-    ra: 20.0035
-    dec: -26.767
-    make_fits: 'gri'
-    xsize: 5
-    ysize: 3
-    return_list: True
-    db: 'Y3A2'
+    ra: {{ ra }}
+    dec: {{ dec }}
+    coadd: {{ coadd }}
+    make_fits: {{ make_fits }}
+    xsize: {{ xsize }}
+    ysize: {{ ysize }}
+    db: {{ db }}
+    colors: {{ colors }}
+    release: {{ release }}
+    # return_list: {{ return_list }}
+    #make_pngs: {{ make_pngs }}
+    #make_tiffs: {{ make_tiffs }}
+    #make_rgbs: {{ make_rgbs }}
+    #make_rgbs_stiff: {{ make_rgbs_stiff }}
+    #colors_stiff: {{ colors_stiff }}
