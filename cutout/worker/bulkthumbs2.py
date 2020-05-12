@@ -266,7 +266,6 @@ def MakeTiffCut(tiledir, outdir, positions, xs, ys, df, maketiff, makepngs):
 def MakeFitsCut(tiledir, outdir, size, positions, colors, df):
     logger = logging.getLogger(__name__)
     os.makedirs(outdir, exist_ok=True)            # Check if outdir exists
-
     for c in range(len(colors)):        # Iterate over all desired colors
         # Finish the tile's name and open the file. Camel-case check is required because Y band is always capitalized.
         if colors[c] == 'Y' or colors[c] == 'y':
@@ -502,7 +501,7 @@ def run(args):
             jobid = str(uuid.uuid4())
 
         # outdir = OUTDIR #+ usernm + '/' + jobid + '/'
-        outdir = args.outdir
+        outdir = args.outdir + '/'
         OUTDIR = outdir
         print(outdir)
 
@@ -523,7 +522,7 @@ def run(args):
     logtime = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     #logname = OUTDIR + 'BulkThumbs_' + logtime + '.log'
     #logname = outdir + 'BulkThumbs_' + logtime + '.log'
-    logname = outdir + '/' + 'log.log'
+    logname = outdir + 'log.log'
     formatter = logging.Formatter('%(asctime)s - '+str(rank)+' - %(levelname)-8s - %(message)s')
 
     logger = logging.getLogger(__name__)
