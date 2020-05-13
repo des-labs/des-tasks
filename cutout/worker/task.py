@@ -5,6 +5,7 @@ import os
 import requests
 import rpdb
 import bulkthumbs2
+from astropy.io import fits
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -76,8 +77,18 @@ def execute_task(config):
         }
 
     bulkthumbs2.run(dotdict(args_dict))
-    return({'status':'ok','msg':'Execution complete'})
 
+    # Verifying outputs
+    path = '/home/worker/output/{}'.format(config['metadata']['jobId'])
+    for file in os.listdir(path):
+        if file.endswith(".fits"):
+            try:
+                fullpath = path + file
+                hdus = fits.open(fullpath,checksum=True)
+                hdus.verify()
+                return({'status':'ok','msg':'Execution complete'})
+            except:
+                return({'status':'error','msg':'Execution complete'})
 
 if __name__ == "__main__":
 
