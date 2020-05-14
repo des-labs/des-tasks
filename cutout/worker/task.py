@@ -86,9 +86,10 @@ def execute_task(config):
                 fullpath = path + file
                 hdus = fits.open(fullpath,checksum=True)
                 hdus.verify()
-                return({'status':'ok','msg':'Execution complete'})
             except:
                 return({'status':'error','msg':'Execution complete'})
+
+    return({'status':'ok','msg':'Execution complete'})
 
 if __name__ == "__main__":
 
