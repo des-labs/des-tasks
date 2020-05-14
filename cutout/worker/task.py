@@ -4,8 +4,9 @@ import yaml
 import os
 import requests
 import rpdb
-import bulkthumbs2
+#import bulkthumbs2
 from astropy.io import fits
+import subprocess
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -41,54 +42,30 @@ def task_complete(config, response):
 
 
 def execute_task(config):
-    logging.info('Executing bulkthumbs2.py:')
-    args_dict = {
-        # ra: array of floats
-        'ra': config['spec']['inputs']['ra'],
-        # dec: array of floats
-        'dec': config['spec']['inputs']['dec'],
-        # coad: array of integers
-        'coadd': config['spec']['inputs']['coadd'],
-        # release: atomic string
-        'release': config['spec']['inputs']['release'],
-        # make_fits: boolean
-        'make_fits': config['spec']['inputs']['make_fits'],
-        # 'make_tiffs': config['spec']['inputs']['make_tiffs'],
-        # 'make_pngs': config['spec']['inputs']['make_pngs'],
-        # 'make_rgbs': config['spec']['inputs']['make_rgbs'],
-        # rgb_values:
-        # 'rgb_values': config['spec']['inputs']['make_fits'],
-        # xsize: float
-        'xsize': config['spec']['inputs']['xsize'],
-        # ysize: float
-        'ysize': config['spec']['inputs']['ysize'],
-        # return_list: boolean
-        # 'return_list': config['spec']['inputs']['return_list'],
-        # db: atomic string
-        'db': config['spec']['inputs']['db'],
-        # colors: CSV-formatted string
-        'colors': config['spec']['inputs']['colors'],
-        # colors_stiff: CSV-formatted string
-        # 'colors_stiff': config['spec']['inputs']['colors_stiff'],
-        'outdir': '/home/worker/output/{}'.format(config['metadata']['jobId']),
-        'usernm': config['metadata']['username'],
-        'passwd': config['metadata']['password'],
-        'jobid': config['metadata']['jobId']
-        }
-
-    bulkthumbs2.run(dotdict(args_dict))
+    # Dump cutout config to YAML file in working directory
+    cutout_config_file = 'cutout_config.yaml'
+    with open(cutout_config_file, 'w') as file:
+        yaml.dump(config['spec'], file)
+    # TODO: replace hard-coded value with number of CPUs allocated to the k8s Job
+    num_cpus = 1
+    args = 'mpirun -n {} python3 bulkthumbs.py --config {}'.format(num_cpus, cutout_config_file)
+    try:
+        run_output = subprocess.check_output([args], shell=True)
+    except subprocess.CalledProcessError as e:
+        logging.info(e.output)
 
     # Verifying outputs
-    path = '/home/worker/output/{}'.format(config['metadata']['jobId'])
+    path = config['spec']['outdir']
     for file in os.listdir(path):
         if file.endswith(".fits"):
             try:
                 fullpath = path + file
                 hdus = fits.open(fullpath,checksum=True)
                 hdus.verify()
-                return({'status':'ok','msg':'Execution complete'})
             except:
                 return({'status':'error','msg':'Execution complete'})
+
+    return({'status':'ok','msg':'Execution complete'})
 
 if __name__ == "__main__":
 

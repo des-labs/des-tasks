@@ -1,16 +1,1 @@
-inputs:
-    ra: {{ ra }}
-    dec: {{ dec }}
-    coadd: {{ coadd }}
-    make_fits: {{ make_fits }}
-    xsize: {{ xsize }}
-    ysize: {{ ysize }}
-    db: {{ db }}
-    colors: {{ colors }}
-    release: {{ release }}
-    # return_list: {{ return_list }}
-    #make_pngs: {{ make_pngs }}
-    #make_tiffs: {{ make_tiffs }}
-    #make_rgbs: {{ make_rgbs }}
-    #make_rgbs_stiff: {{ make_rgbs_stiff }}
-    #colors_stiff: {{ colors_stiff }}
+{}
