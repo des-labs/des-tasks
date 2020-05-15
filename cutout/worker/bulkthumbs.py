@@ -34,7 +34,7 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = 144000000        # allows Pillow to not freak out at a large filesize
 ARCMIN_TO_DEG = 0.0166667        # deg per arcmin
 VALID_DATABASES = ['DESDR','DESSCI']
-VALID_RELEASES = ['DR1','Y6A1','Y3A2','SVA1']
+VALID_RELEASES = ['Y6A1','Y3A2','Y1A1','SVA1']
 
 # TODO: remove these unnecessary global variables
 TILES_FOLDER = ''
