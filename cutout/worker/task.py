@@ -4,9 +4,13 @@ import yaml
 import os
 import requests
 import rpdb
-#import bulkthumbs2
+import json
 from astropy.io import fits
 import subprocess
+import glob
+
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -32,6 +36,17 @@ def task_complete(config, response):
     # Report that work has completed
     logging.info("Reporting completion to jobhandler (apitoken: {})...".format(
         config['metadata']['apiToken']))
+    # If no errors have occurred already, parse the job summary file for file info
+    # if response['status'] == STATUS_OK:
+    path = config['spec']['outdir']
+    files = glob.glob(os.path.join(path, '*/*'))
+    relpaths = []
+    total_size = 0.0
+    for file in files:
+        relpaths.append(os.path.relpath(file, start='/home/worker/output'))
+        total_size += os.path.getsize(file)
+    response['files'] = relpaths
+    response['sizes'] = total_size
     requests.post(
         '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -42,6 +57,10 @@ def task_complete(config, response):
 
 
 def execute_task(config):
+    response = {
+        'status': STATUS_OK,
+        'msg': ''
+    }
     # Dump cutout config to YAML file in working directory
     cutout_config_file = 'cutout_config.yaml'
     with open(cutout_config_file, 'w') as file:
@@ -59,13 +78,15 @@ def execute_task(config):
     for file in os.listdir(path):
         if file.endswith(".fits"):
             try:
-                fullpath = path + file
+                fullpath = os.path.join(path, file)
                 hdus = fits.open(fullpath,checksum=True)
                 hdus.verify()
             except:
-                return({'status':'error','msg':'Execution complete'})
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'FITS file not found'
+                return response
 
-    return({'status':'ok','msg':'Execution complete'})
+    return response
 
 if __name__ == "__main__":
 
@@ -101,7 +122,7 @@ if __name__ == "__main__":
     while debug_loop == True:
         response = execute_task(config)
 
-    logging.info("Database query response:\n{}".format(response))
+    logging.info("Cutout response:\n{}".format(response))
 
     # Report to the JobHandler that the job is complete
     task_complete(config, response)
