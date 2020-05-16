@@ -4,7 +4,6 @@ import yaml
 import os
 import requests
 import rpdb
-import json
 from astropy.io import fits
 import subprocess
 import glob
@@ -19,11 +18,7 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 def task_start(config):
-    logging.info('Running  job:{} at {}'.format(
-       config['metadata']['name'], os.path.basename(__file__)))
-
-    logging.info("Reporting job start to jobhandler (apitoken: {})...".format(
-       config['metadata']['apiToken']))
+    logging.info('Starting job: {}'.format(config['metadata']['name']))
     requests.post(
         '{}/job/start'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -34,19 +29,19 @@ def task_start(config):
 
 def task_complete(config, response):
     # Report that work has completed
-    logging.info("Reporting completion to jobhandler (apitoken: {})...".format(
-        config['metadata']['apiToken']))
     # If no errors have occurred already, parse the job summary file for file info
-    # if response['status'] == STATUS_OK:
     path = config['spec']['outdir']
     files = glob.glob(os.path.join(path, '*/*'))
     relpaths = []
     total_size = 0.0
     for file in files:
-        relpaths.append(os.path.relpath(file, start='/home/worker/output'))
+        relpaths.append(os.path.relpath(file, start='/home/worker/output/cutout'))
         total_size += os.path.getsize(file)
     response['files'] = relpaths
     response['sizes'] = total_size
+
+    logging.info("Cutout response:\n{}".format(response))
+
     requests.post(
         '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -90,6 +85,9 @@ def execute_task(config):
 
 if __name__ == "__main__":
 
+    # Make the cutout subdirectory if it does not already exist.
+    os.makedirs('/home/worker/output/cutout', exist_ok=True)
+
     # Import job configuration
     try:
        input_file = sys.argv[1]
@@ -121,8 +119,6 @@ if __name__ == "__main__":
     # The `debug_loop` variable can be set to false using the interactive debugger to break the loop
     while debug_loop == True:
         response = execute_task(config)
-
-    logging.info("Cutout response:\n{}".format(response))
 
     # Report to the JobHandler that the job is complete
     task_complete(config, response)

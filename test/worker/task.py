@@ -13,6 +13,9 @@ DEFAULT_RESPONSE = {
     'output': {},
 }
 
+# Make the cutout subdirectory if it does not already exist.
+os.makedirs('/home/worker/output/test', exist_ok=True)
+
 try:
    input_file = sys.argv[1]
 except:
@@ -33,7 +36,7 @@ t = config['spec']['inputs']['time']
 logging.info('********')
 logging.info('Running  job:{} at {}'.format(
    config['metadata']['name'], os.path.basename(__file__)))
-logging.debug("This is a debug message")
+# logging.debug("This is a debug message")
 logging.info("Working... for  {} seconds".format(t))
 time.sleep(t)
 logging.info("Reporting completion to jobhandler (apitoken: {})...".format(config['metadata']['apiToken']))
