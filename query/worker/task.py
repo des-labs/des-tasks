@@ -8,11 +8,7 @@ import rpdb
 
 
 def task_start(config):
-    logging.info('Running  job:{} at {}'.format(
-       config['metadata']['name'], os.path.basename(__file__)))
-
-    logging.info("Reporting job start to jobhandler (apitoken: {})...".format(
-       config['metadata']['apiToken']))
+    logging.info('Starting job: {}'.format(config['metadata']['name']))
     requests.post(
         '{}/job/start'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -23,8 +19,6 @@ def task_start(config):
 
 def task_complete(config, response):
     # Report that work has completed
-    logging.info("Reporting completion to jobhandler (apitoken: {})...".format(
-        config['metadata']['apiToken']))
     requests.post(
         '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -62,13 +56,16 @@ def execute_task(config):
             'dessci',
             config['metadata']['username'],
             config['metadata']['password'],
-            '/home/worker/output/{}'.format(config['metadata']['jobId']),
+            '/home/worker/output/query/{}'.format(config['metadata']['jobId']),
             'query_result.csv'
         )
     return response
 
 
 if __name__ == "__main__":
+
+    # Make the cutout subdirectory if it does not already exist.
+    os.makedirs('/home/worker/output/query', exist_ok=True)
 
     # Import job configuration
     try:

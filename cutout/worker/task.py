@@ -4,8 +4,12 @@ import yaml
 import os
 import requests
 import rpdb
-import bulkthumbs2
 from astropy.io import fits
+import subprocess
+import glob
+
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -14,11 +18,7 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 def task_start(config):
-    logging.info('Running  job:{} at {}'.format(
-       config['metadata']['name'], os.path.basename(__file__)))
-
-    logging.info("Reporting job start to jobhandler (apitoken: {})...".format(
-       config['metadata']['apiToken']))
+    logging.info('Starting job: {}'.format(config['metadata']['name']))
     requests.post(
         '{}/job/start'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -29,8 +29,19 @@ def task_start(config):
 
 def task_complete(config, response):
     # Report that work has completed
-    logging.info("Reporting completion to jobhandler (apitoken: {})...".format(
-        config['metadata']['apiToken']))
+    # If no errors have occurred already, parse the job summary file for file info
+    path = config['spec']['outdir']
+    files = glob.glob(os.path.join(path, '*/*'))
+    relpaths = []
+    total_size = 0.0
+    for file in files:
+        relpaths.append(os.path.relpath(file, start='/home/worker/output/cutout'))
+        total_size += os.path.getsize(file)
+    response['files'] = relpaths
+    response['sizes'] = total_size
+
+    logging.info("Cutout response:\n{}".format(response))
+
     requests.post(
         '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
         json={
@@ -41,57 +52,43 @@ def task_complete(config, response):
 
 
 def execute_task(config):
-    logging.info('Executing bulkthumbs2.py:')
-    args_dict = {
-        # ra: array of floats
-        'ra': config['spec']['inputs']['ra'],
-        # dec: array of floats
-        'dec': config['spec']['inputs']['dec'],
-        # coad: array of integers
-        'coadd': config['spec']['inputs']['coadd'],
-        # release: atomic string
-        'release': config['spec']['inputs']['release'],
-        # make_fits: boolean
-        'make_fits': config['spec']['inputs']['make_fits'],
-        # 'make_tiffs': config['spec']['inputs']['make_tiffs'],
-        # 'make_pngs': config['spec']['inputs']['make_pngs'],
-        # 'make_rgbs': config['spec']['inputs']['make_rgbs'],
-        # rgb_values:
-        # 'rgb_values': config['spec']['inputs']['make_fits'],
-        # xsize: float
-        'xsize': config['spec']['inputs']['xsize'],
-        # ysize: float
-        'ysize': config['spec']['inputs']['ysize'],
-        # return_list: boolean
-        # 'return_list': config['spec']['inputs']['return_list'],
-        # db: atomic string
-        'db': config['spec']['inputs']['db'],
-        # colors: CSV-formatted string
-        'colors': config['spec']['inputs']['colors'],
-        # colors_stiff: CSV-formatted string
-        # 'colors_stiff': config['spec']['inputs']['colors_stiff'],
-        'outdir': '/home/worker/output/{}'.format(config['metadata']['jobId']),
-        'usernm': config['metadata']['username'],
-        'passwd': config['metadata']['password'],
-        'jobid': config['metadata']['jobId']
-        }
-
-    bulkthumbs2.run(dotdict(args_dict))
+    response = {
+        'status': STATUS_OK,
+        'msg': ''
+    }
+    # Dump cutout config to YAML file in working directory
+    cutout_config_file = 'cutout_config.yaml'
+    with open(cutout_config_file, 'w') as file:
+        yaml.dump(config['spec'], file)
+    # TODO: replace hard-coded value with number of CPUs allocated to the k8s Job
+    num_cpus = 1
+    args = 'mpirun -n {} python3 bulkthumbs.py --config {}'.format(num_cpus, cutout_config_file)
+    try:
+        run_output = subprocess.check_output([args], shell=True)
+    except subprocess.CalledProcessError as e:
+        logging.info(e.output)
 
     # Verifying outputs
-    path = '/home/worker/output/{}'.format(config['metadata']['jobId'])
+    path = config['spec']['outdir']
     for file in os.listdir(path):
         if file.endswith(".fits"):
             try:
-                fullpath = path + file
+                fullpath = os.path.join(path, file)
                 hdus = fits.open(fullpath,checksum=True)
                 hdus.verify()
             except:
-                return({'status':'error','msg':'Execution complete'})
+                response['status'] = STATUS_ERROR
+                response['msg'] = 'FITS file not found'
+                return response
+
+    return response
 
     return({'status':'ok','msg':'Execution complete'})
 
 if __name__ == "__main__":
+
+    # Make the cutout subdirectory if it does not already exist.
+    os.makedirs('/home/worker/output/cutout', exist_ok=True)
 
     # Import job configuration
     try:
@@ -124,8 +121,6 @@ if __name__ == "__main__":
     # The `debug_loop` variable can be set to false using the interactive debugger to break the loop
     while debug_loop == True:
         response = execute_task(config)
-
-    logging.info("Database query response:\n{}".format(response))
 
     # Report to the JobHandler that the job is complete
     task_complete(config, response)
