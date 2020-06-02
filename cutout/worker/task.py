@@ -56,10 +56,20 @@ def execute_task(config):
         'status': STATUS_OK,
         'msg': ''
     }
+
+    if 'positions' in config['spec']:
+        # Dump CSV-formatted data to a CSV file in working directory
+        position_csv_file = 'positions.csv'
+        with open(position_csv_file, 'w') as file:
+            file.write(config['spec']['positions'].encode('utf-8').decode('unicode-escape'))
+        config['spec']['csv'] = position_csv_file
+        config['spec'].pop('positions', None)
+
     # Dump cutout config to YAML file in working directory
     cutout_config_file = 'cutout_config.yaml'
     with open(cutout_config_file, 'w') as file:
         yaml.dump(config['spec'], file)
+
     # TODO: replace hard-coded value with number of CPUs allocated to the k8s Job
     num_cpus = 1
     args = 'mpirun -n {} python3 bulkthumbs.py --config {}'.format(num_cpus, cutout_config_file)
