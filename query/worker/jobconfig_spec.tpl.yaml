@@ -1,3 +1,4 @@
 inputs:
   queryString: {{ queryString }}
   quickQuery: {{ quickQuery }}
+  checkQuery: {{ checkQuery }}

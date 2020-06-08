@@ -40,8 +40,21 @@ def execute_task(config):
         config['metadata']['password']
     )
     if check_query['status'] == 'error':
-        logging.error("Invalid query.")
-        return check_query
+
+        if config["spec"]["inputs"]["checkQuery"] == True:
+            # If the task is simply to check the validity of the query, then the job did not fail
+            check_query['status'] = 'ok'
+            return check_query
+        else:
+            logging.error("Invalid query.")
+
+    elif config["spec"]["inputs"]["checkQuery"] == True:
+        # If the task is simply to check the validity of the query, then do not execute the query
+        response = {
+            'status': 'ok',
+            'msg': ''
+        }
+        return response
     # Submit the query and obtain resulting data
     if config["spec"]["inputs"]["quickQuery"] == True:
         response = ea_tasks.run_quick(
