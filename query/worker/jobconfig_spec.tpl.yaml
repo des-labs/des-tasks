@@ -1,4 +1,6 @@
 inputs:
   queryString: {{ queryString }}
+  fileName: {{ fileName }}
   quickQuery: {{ quickQuery }}
   checkQuery: {{ checkQuery }}
+  compression: {{ compression }}

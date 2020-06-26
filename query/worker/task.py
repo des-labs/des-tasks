@@ -64,13 +64,15 @@ def execute_task(config):
             config['metadata']['password']
         )
     else:
+        logging.info('{}'.format(config['spec']['inputs']))
         response = ea_tasks.run_query(
             query_string,
             'dessci',
             config['metadata']['username'],
             config['metadata']['password'],
             '/home/worker/output/query/{}'.format(config['metadata']['jobId']),
-            'query_result.csv'
+            config["spec"]["inputs"]["fileName"],
+            config["spec"]["inputs"]["compression"]
         )
     return response
 

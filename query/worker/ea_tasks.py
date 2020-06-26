@@ -94,7 +94,7 @@ def run_quick(query, db, username, password):
     return response
 
 
-def run_query(query, db, username, password, job_folder, filename, timeout=None):
+def run_query(query, db, username, password, job_folder, filename, compression = False, timeout=None):
     response = DEFAULT_RESPONSE
     if not os.path.exists(job_folder):
         os.mkdir(job_folder)
@@ -117,6 +117,8 @@ def run_query(query, db, username, password, job_folder, filename, timeout=None)
         if query.lower().lstrip().startswith('select'):
             try:
                 outfile = os.path.join(job_folder, filename)
+                if compression:
+                    connection.compression = True
                 connection.query_and_save(query, outfile)
                 if timeout is not None:
                     tt.cancel()
