@@ -5,6 +5,8 @@ RUN apt-get install -y  \
     python3-pip         \
     libaio1             \
     wget                \
+    imagemagick         \
+    stiff               \
     unzip
 
 RUN apt install -y \
