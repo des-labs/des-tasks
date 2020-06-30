@@ -1,8 +1,4 @@
-[submodule "query/easyaccess"]
-	path = query/easyaccess
-	url = https://github.com/mgckind/easyaccess
-	branch = master
-[submodule "cutout/easyaccess"]
-	path = cutout/easyaccess
+[submodule "base-images/easyaccess"]
+	path = base-images/easyaccess
 	url = https://github.com/mgckind/easyaccess
 	branch = master
