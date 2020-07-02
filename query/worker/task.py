@@ -35,7 +35,7 @@ def execute_task(config):
     # Verify that the query is valid
     check_query = ea_tasks.check_query(
         query_string,
-        'dessci',
+        config['metadata']['database'],
         config['metadata']['username'],
         config['metadata']['password']
     )
@@ -59,7 +59,7 @@ def execute_task(config):
     if config["spec"]["inputs"]["quickQuery"] == True:
         response = ea_tasks.run_quick(
             query_string,
-            'dessci',
+            config['metadata']['database'],
             config['metadata']['username'],
             config['metadata']['password']
         )
@@ -67,7 +67,7 @@ def execute_task(config):
         logging.info('{}'.format(config['spec']['inputs']))
         response = ea_tasks.run_query(
             query_string,
-            'dessci',
+            config['metadata']['database'],
             config['metadata']['username'],
             config['metadata']['password'],
             '/home/worker/output/query/{}'.format(config['metadata']['jobId']),
