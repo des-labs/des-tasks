@@ -7,6 +7,8 @@ import rpdb
 from astropy.io import fits
 import subprocess
 import glob
+import shutil
+from pathlib import Path
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -91,9 +93,23 @@ def execute_task(config):
                 response['msg'] = 'FITS file not found'
                 return response
 
-    return response
+    # Generate compressed archive file
+    try:
+        # root_dir = '{}'.format(Path(path).parent)
+        root_dir = 'output/cutout'
+        base_dir = '{}'.format(config['metadata']['jobId'])
+        logging.info('Generating archive file for directory "{}" in "{}"'.format(base_dir, root_dir))
+        shutil.make_archive(
+            '{}/{}'.format(root_dir, config['metadata']['jobId']),
+            'gztar',
+            root_dir=root_dir, base_dir=base_dir,
+            logger=logging
+        )
+    except Exception as e:
+        response['status'] = STATUS_ERROR
+        response['msg'] = str(e).strip()
 
-    return({'status':'ok','msg':'Execution complete'})
+    return response
 
 if __name__ == "__main__":
 
