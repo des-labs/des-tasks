@@ -78,7 +78,9 @@ def execute_task(config):
     try:
         run_output = subprocess.check_output([args], shell=True)
     except subprocess.CalledProcessError as e:
-        logging.info(e.output)
+        logging.error(e.output)
+        response['status'] = STATUS_ERROR
+        response['msg'] = e.output
 
     # Verifying outputs
     path = config['spec']['outdir']

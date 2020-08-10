@@ -586,34 +586,37 @@ def run(args):
     table_path = "MCARRAS2.{}_TILE_PATH_INFO".format(args.release)
     ###################### from bulkthumbs2.py ################################
     for i in tilenm:
-        if args.tiledir != 'auto':
-            tiledir = os.path.join(args.tiledir, i)
-        else:
-            ###################### from bulkthumbs2.py ################################
-            dftile = conn_temp.query_to_pandas(qtemplate.format(table_path, i))
-            tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
-            if args.release in ('Y6A1', 'Y3A2'):
-                tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
-            if args.release in ('SVA1', 'Y1A1'):
-                tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
-            logger.info('Using DB and table {} to determine paths...'.format(table_path))
-            ###################### from bulkthumbs2.py ################################
-        tiledir = os.path.join(tiledir, '')
-        udf = df[ df.TILENAME == i ]
-        udf = udf.reset_index()
+        try:
+            if args.tiledir != 'auto':
+                tiledir = os.path.join(args.tiledir, i)
+            else:
+                ###################### from bulkthumbs2.py ################################
+                dftile = conn_temp.query_to_pandas(qtemplate.format(table_path, i))
+                tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
+                if args.release in ('Y6A1', 'Y3A2'):
+                    tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
+                if args.release in ('SVA1', 'Y1A1'):
+                    tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
+                logger.info('Using DB and table {} to determine paths...'.format(table_path))
+                ###################### from bulkthumbs2.py ################################
+            tiledir = os.path.join(tiledir, '')
+            udf = df[ df.TILENAME == i ]
+            udf = udf.reset_index()
 
-        size = u.Quantity((ys, xs), u.arcmin)
-        positions = SkyCoord(udf['ALPHAWIN_J2000'], udf['DELTAWIN_J2000'], frame='icrs', unit='deg', equinox='J2000', representation_type='spherical')
+            size = u.Quantity((ys, xs), u.arcmin)
+            positions = SkyCoord(udf['ALPHAWIN_J2000'], udf['DELTAWIN_J2000'], frame='icrs', unit='deg', equinox='J2000', representation_type='spherical')
 
-        if args.make_tiffs or args.make_pngs:
-            MakeTiffCut(tiledir, os.path.join(outdir, i), positions, xs, ys, udf, args.make_tiffs, args.make_pngs)
+            if args.make_tiffs or args.make_pngs:
+                MakeTiffCut(tiledir, os.path.join(outdir, i), positions, xs, ys, udf, args.make_tiffs, args.make_pngs)
 
-        if args.make_fits:
-            MakeFitsCut(tiledir, os.path.join(outdir, i), size, positions, colors, udf)
+            if args.make_fits:
+                MakeFitsCut(tiledir, os.path.join(outdir, i), size, positions, colors, udf)
 
-        if args.make_rgb_lupton or args.make_rgb_stiff:
-            luptonargs = [float(args.rgb_minimum), float(args.rgb_stretch), float(args.rgb_asinh)]
-            MakeRGB(tiledir, os.path.join(outdir, i), udf, positions, xs, ys, args.colors_rgb, args.make_rgb_stiff, args.make_rgb_lupton, luptonargs)
+            if args.make_rgb_lupton or args.make_rgb_stiff:
+                luptonargs = [float(args.rgb_minimum), float(args.rgb_stretch), float(args.rgb_asinh)]
+                MakeRGB(tiledir, os.path.join(outdir, i), udf, positions, xs, ys, args.colors_rgb, args.make_rgb_stiff, args.make_rgb_lupton, luptonargs)
+        except Exception as e:
+            logger.error(str(e).strip())
 
     ###################### from bulkthumbs2.py ################################
     conn_temp.close()
