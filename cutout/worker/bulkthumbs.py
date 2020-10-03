@@ -33,8 +33,9 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = 144000000        # allows Pillow to not freak out at a large filesize
 ARCMIN_TO_DEG = 0.0166667        # deg per arcmin
+# TODO: Move the database and release names to environment variables or to a config file instead of hard-coding
 VALID_DATABASES = ['DESDR','DESSCI']
-VALID_RELEASES = ['Y6A1','Y3A2','Y1A1','SVA1']
+VALID_RELEASES = ['Y6A1','Y3A2','Y1A1','SVA1','DR1','DR2']
 
 # TODO: remove these unnecessary global variables
 TILES_FOLDER = ''
@@ -378,27 +379,30 @@ def run(args):
     logger = logging.getLogger(__name__)
     logger.info(args)
     if rank == 0:
+        uu = args.usernm
+        pp = args.passwd
         if args.db == 'DESDR':
-            db = 'desdr'
-            uu = args.usernm    #DR1_UU
-            pp = args.passwd    #DR1_PP
-            conn = ea.connect(db, user=uu, passwd=pp)
+            # Use the Oracle service account to access the relevant tile path info table if provided in the config
+            if args.oracle_service_account_db and args.oracle_service_account_user and args.oracle_service_account_pass:
+                db = args.oracle_service_account_db
+                uu = args.oracle_service_account_user
+                pp = args.oracle_service_account_pass
+            else:
+                db = 'desdr'
         elif args.db == 'DESSCI':
             db = 'dessci'
-            uu = args.usernm    #DR1_UU
-            pp = args.passwd    #DR1_PP
-            conn = ea.connect(db, user=uu, passwd=pp)
-
+        else:
+            logger.error('Invalid database.')
+            return
+        conn = ea.connect(db, user=uu, passwd=pp)
         curs = conn.cursor()
 
-        usernm = str(conn.user)
         if args.jobid:
             jobid = args.jobid
         else:
             jobid = str(uuid.uuid4())
 
         outdir = os.path.join(args.outdir, '') #, + usernm + '/' + jobid + '/'        # use for local
-        #outdir = OUTDIR        # use for desaccess
 
         # Remove this try/except block for desaccess. Keep for local.
         try:
@@ -410,9 +414,9 @@ def run(args):
             sys.stdout.flush()
             comm.Abort()
     else:
-        usernm, jobid, outdir = None, None, None
+        args.usernm, jobid, outdir = None, None, None
 
-    usernm, jobid, outdir = comm.bcast([usernm, jobid, outdir], root=0)
+    args.usernm, jobid, outdir = comm.bcast([args.usernm, jobid, outdir], root=0)
 
     logtime = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
     logname = os.path.join(outdir, 'BulkThumbs_' + logtime + '.log')         # use for local
@@ -484,9 +488,9 @@ def run(args):
         unmatched_coords = {'RA':[], 'DEC':[]}
         unmatched_coadds = []
 
-        logger.info('User: ' + usernm)
+        logger.info('User: ' + args.usernm)
         logger.info('JobID: ' + str(jobid))
-        summary['user'] = usernm
+        summary['user'] = args.usernm
         summary['jobid'] = str(jobid)
 
         tablename = 'BTL_'+jobid.upper().replace("-","_")    # "BulkThumbs_List_<jobid>"
@@ -508,7 +512,6 @@ def run(args):
             elif args.db == 'DESDR':
                 catalog = 'DR1_Tile_INFO'
             query += " from {0} temp left outer join {1} m on (m.CROSSRA0='N' and (temp.RA between m.URAMIN and m.URAMAX) and (temp.DEC between m.UDECMIN and m.UDECMAX)) or (m.CROSSRA0='Y' and (temp.RA_ADJUSTED between m.URAMIN-360 and m.URAMAX) and (temp.DEC between m.UDECMIN and m.UDECMAX))".format(tablename, catalog)
-
             df = conn.query_to_pandas(query)
             curs.execute('drop table {}'.format(tablename))
             os.remove(tablename_csv_filepath)
@@ -556,7 +559,6 @@ def run(args):
             summary['Unmatched_Coadds'] = unmatched_coadds
             print(unmatched_coadds)
 
-        conn.close()
         df = df.sort_values(by=['TILENAME'])
         df = df.drop_duplicates(['RA','DEC'], keep='first')
 
@@ -579,26 +581,23 @@ def run(args):
 
     df = comm.scatter(df, root=0)
 
+
+    
     tilenm = df['TILENAME'].unique()
-    ###################### from bulkthumbs2.py ################################
-    conn_temp = ea.connect('dessci', user=args.usernm, passwd=args.passwd)
     qtemplate = "select FITS_IMAGES from {} where tilename = '{}' and band = 'i'"
     table_path = "MCARRAS2.{}_TILE_PATH_INFO".format(args.release)
-    ###################### from bulkthumbs2.py ################################
     for i in tilenm:
         try:
             if args.tiledir != 'auto':
                 tiledir = os.path.join(args.tiledir, i)
             else:
-                ###################### from bulkthumbs2.py ################################
-                dftile = conn_temp.query_to_pandas(qtemplate.format(table_path, i))
+                dftile = conn.query_to_pandas(qtemplate.format(table_path, i))
                 tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
-                if args.release in ('Y6A1', 'Y3A2'):
+                if args.release in ('Y6A1', 'Y3A2', 'DR1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
                 if args.release in ('SVA1', 'Y1A1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
                 logger.info('Using DB and table {} to determine paths...'.format(table_path))
-                ###################### from bulkthumbs2.py ################################
             tiledir = os.path.join(tiledir, '')
             udf = df[ df.TILENAME == i ]
             udf = udf.reset_index()
@@ -618,9 +617,7 @@ def run(args):
         except Exception as e:
             logger.error(str(e).strip())
 
-    ###################### from bulkthumbs2.py ################################
-    conn_temp.close()
-    ###################### from bulkthumbs2.py ################################
+    conn.close()
     comm.Barrier()
 
     if rank == 0:
@@ -692,15 +689,13 @@ def validate_arguments(args):
             print('Bulkthumbs config file not found. Either no --tiledir or no --outdir set.')
             sys.exit(1)
 
-    #DR1_UU = conf['dr1_user']['usernm']
-    #DR1_PP = conf['dr1_user']['passwd']
-
     if args.db not in VALID_DATABASES:
         print('Please select a valid database: {}.'.format(VALID_DATABASES))
         sys.exit(1)
-    if args.db == 'DR1' and not (args.usernm and args.passwd):
-        print('Please include the --usernm and --passwd to use the DR1 database.')
-        sys.exit(1)
+    # The database is DESDR; DR1 is a release stored in this database
+    # if args.db == 'DR1' and not (args.usernm and args.passwd):
+    #     print('Please include the --usernm and --passwd to use the DR1 database.')
+    #     sys.exit(1)
     if args.release not in VALID_RELEASES:
         print('Please select a valid data release: {}.'.format(VALID_RELEASES))
         sys.exit(1)
@@ -762,6 +757,10 @@ if __name__ == '__main__':
     parser.add_argument('--passwd', required=False, help='Password for database; otherwise uses values from desservices file.')
     parser.add_argument('--tiledir', required=False, help='Directory where tiles are stored.')
     parser.add_argument('--outdir', required=False, help='Overwrite for output directory.')
+
+    parser.add_argument('--oracle_service_account_db', required=False, help='Oracle service account database name.')
+    parser.add_argument('--oracle_service_account_user', required=False, help='Oracle service account username.')
+    parser.add_argument('--oracle_service_account_pass', required=False, help='Oracle service account password.')
 
     if len(sys.argv) == 1:
         parser.print_help()
