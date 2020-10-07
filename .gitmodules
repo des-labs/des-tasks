@@ -1,4 +1,4 @@
 [submodule "base-images/easyaccess"]
 	path = base-images/easyaccess
-	url = https://github.com/mgckind/easyaccess
+	url = https://github.com/des-labs/easyaccess
 	branch = master
