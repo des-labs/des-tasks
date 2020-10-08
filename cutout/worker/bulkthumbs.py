@@ -663,7 +663,7 @@ def import_arguments_from_config(args):
     if args.config:
         arg_list = []
         with open(args.config, 'r') as configfile:
-            config = yaml.load(configfile)
+            config = yaml.load(configfile, Loader=yaml.FullLoader)
             for key, value in config.items():
                 if value is True:
                     arg_list.append('--{}'.format(key))
@@ -679,7 +679,7 @@ def validate_arguments(args):
     if not args.tiledir or not args.outdir:
         try:
             with open('config/bulkthumbsconfig.yaml','r') as cfile:
-                conf = yaml.load(cfile)
+                conf = yaml.load(cfile, Loader=yaml.FullLoader)
             # TODO: use os library to build path strings
             if not args.tiledir:
                 args.tiledir = os.path.join(conf['directories']['tiles'], '')
