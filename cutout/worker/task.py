@@ -37,7 +37,7 @@ def task_complete(config, response):
     relpaths = []
     total_size = 0.0
     for file in files:
-        relpaths.append(os.path.relpath(file, start='/home/worker/output/cutout'))
+        relpaths.append(os.path.relpath(file, start=config['cutout_dir']))
         total_size += os.path.getsize(file)
     response['files'] = relpaths
     response['sizes'] = total_size
@@ -59,13 +59,16 @@ def execute_task(config):
         'msg': ''
     }
 
-    if 'positions' in config['spec']:
-        # Dump CSV-formatted data to a CSV file in working directory
-        position_csv_file = 'positions.csv'
-        with open(position_csv_file, 'w') as file:
-            file.write(config['spec']['positions'].encode('utf-8').decode('unicode-escape'))
-        config['spec']['csv'] = position_csv_file
-        config['spec'].pop('positions', None)
+    # TODO: positions is a required value of type CSV-formatted text string. Allow specifying
+    # instead a path to a CSV file.
+    #
+    # if 'positions' in config['spec']:
+    #     # Dump CSV-formatted data to a CSV file in working directory
+    #     position_csv_file = 'positions.csv'
+    #     with open(position_csv_file, 'w') as file:
+    #         file.write(config['spec']['positions'].encode('utf-8').decode('unicode-escape'))
+    #     config['spec']['positions'] = position_csv_file
+    #     # config['spec'].pop('positions', None)
 
     # Dump cutout config to YAML file in working directory
     cutout_config_file = 'cutout_config.yaml'
@@ -98,7 +101,8 @@ def execute_task(config):
     # Generate compressed archive file
     try:
         # root_dir = '{}'.format(Path(path).parent)
-        root_dir = 'output/cutout'
+        # root_dir = 'output/cutout'
+        root_dir = config['cutout_dir']
         base_dir = '{}'.format(config['metadata']['jobId'])
         logging.info('Generating archive file for directory "{}" in "{}"'.format(base_dir, root_dir))
         shutil.make_archive(
@@ -113,18 +117,7 @@ def execute_task(config):
 
     return response
 
-if __name__ == "__main__":
-
-    # Make the cutout subdirectory if it does not already exist.
-    os.makedirs('/home/worker/output/cutout', exist_ok=True)
-
-    # Import job configuration
-    try:
-       input_file = sys.argv[1]
-    except:
-        input_file = 'configjob.yaml'
-    with open(input_file) as cfile:
-        config = yaml.safe_load(cfile)
+def run(config, user_dir='/home/worker/output'):
 
     # Initialize info and error logging
     logging.basicConfig(
@@ -134,6 +127,14 @@ if __name__ == "__main__":
             logging.StreamHandler()
         ]
     )
+    logger = logging.getLogger(__name__)
+
+    logger.info('config:\n{}'.format(config))
+
+    # Make the cutout subdirectory if it does not already exist.
+    cutout_dir = os.path.join(user_dir, 'cutout')
+    os.makedirs(cutout_dir, exist_ok=True)
+    config['cutout_dir'] = cutout_dir
 
     # Report to the JobHandler that the job has begun
     task_start(config)
@@ -141,7 +142,7 @@ if __name__ == "__main__":
     # Trigger debugging if activated and pause execution
     debug_loop = config['metadata']['debug']
     if debug_loop:
-        logging.info('Debugging is enabled. Invoking RPDB...')
+        logger.info('Debugging is enabled. Invoking RPDB...')
         rpdb.set_trace()
 
     # Execute the primary task
@@ -152,3 +153,16 @@ if __name__ == "__main__":
 
     # Report to the JobHandler that the job is complete
     task_complete(config, response)
+
+
+if __name__ == "__main__":
+
+    # Import job configuration
+    try:
+       input_file = sys.argv[1]
+    except:
+        input_file = 'configjob.yaml'
+    with open(input_file) as cfile:
+        config = yaml.safe_load(cfile)
+
+    run(config)

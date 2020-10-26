@@ -1,0 +1,32 @@
+# Data source
+db: desdr
+release: dr1
+tiledir: auto
+# Database access credentials
+username:
+password:
+oracle_service_account_db:
+oracle_service_account_user:
+oracle_service_account_pass:
+# System 
+jobid:
+outdir:
+# CSV-formatted file containing table of (optionally individually configured) cutout positions
+positions:
+# Output types
+MAKE_FITS: 1
+MAKE_RGB_LUPTON: 0
+MAKE_RGB_STIFF: 0
+# Default output specs if not included in position table
+XSIZE: 1.0 
+YSIZE: 1.0
+XSIZE_MIN: 0.1
+XSIZE_MAX: 12.0
+YSIZE_MIN: 0.1
+YSIZE_MAX: 12.0
+FITS_COLORS: 'i'
+RGB_STIFF_COLORS: ''
+RGB_LUPTON_COLORS: ''
+RGB_MINIMUM: 1.0
+RGB_STRETCH: 50.0
+RGB_ASINH: 10.0
