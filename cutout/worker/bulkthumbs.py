@@ -2,8 +2,8 @@
 
 """
 author: Landon Gelman, 2018-2020
-author: Francisco Paz-Chinchon, 2019
 author: T. Andrew Manning, 2020
+author: Francisco Paz-Chinchon, 2019
 description: command line tools for making large numbers and multiple kinds of cutouts from the Dark Energy Survey catalogs
 """
 
@@ -13,6 +13,8 @@ import datetime
 import logging
 import glob
 import time
+
+# from numpy.core import numeric
 import easyaccess as ea
 import numpy as np
 import pandas as pd
@@ -33,10 +35,15 @@ from mpi4py import MPI as mpi
 from PIL import Image
 import math
 from io import StringIO
-import re
+
+STATUS_OK = 'ok'
+STATUS_ERROR = 'error'
+
+logger = logging.getLogger(__name__)
 
 Image.MAX_IMAGE_PIXELS = 144000000        # allows Pillow to not freak out at a large filesize
 ARCMIN_TO_DEG = 0.0166667        # deg per arcmin
+COORD_PRECISION = 1e-6
 # TODO: Move the database and release names to environment variables or to a config file instead of hard-coding
 VALID_DATA_SOURCES = {
     'DESDR': [
@@ -50,8 +57,6 @@ VALID_DATA_SOURCES = {
         'SVA1',
     ]
 }
-# TODO: remove these unnecessary global variables
-TILES_FOLDER = ''
 
 comm = mpi.COMM_WORLD
 nprocs = comm.Get_size()
@@ -111,22 +116,7 @@ def _DecConverter(ra, dec):
 
     return raOUT + decOUT
 
-def filter_colors(colorString):
-    # Returns a comma-separated string of color characters ordered by wavelength
-    if isinstance(colorString, str):
-        # Discard all invalid characters and delete redundancies
-        color_list_filtered_deduplicated = list(set(re.sub(r'([^grizy])', '', colorString.lower())))
-        # Do not order the color sets because that order is how the user selects which bands are represented by Red/Green/Blue 
-        #
-        # ordered_colors = []
-        # # Order the colors from long to short wavelength
-        # for color in list('yzirg'):
-        #     if color in color_list_filtered_deduplicated:
-        #         ordered_colors.append(color)
-        return ''.join(color_list_filtered_deduplicated)
-
-def make_rgb(cutout, color_set, outdir, basename):
-    logger = logging.getLogger(__name__)
+def make_rgb(cutout, rgb_type, color_set, outdir, basename):
     output_files = []
     if len(color_set) != 3:
         logger.error('Exactly three colors are required for RGB generation.')
@@ -142,6 +132,7 @@ def make_rgb(cutout, color_set, outdir, basename):
         fits_filepath = os.path.join(outdir, basename + '_{}.fits'.format(color))
         fits_filepaths[color] = fits_filepath
         if not os.path.exists(outdir) or not glob.glob(fits_filepath):
+            logger.info('The FITS file required for the RGB image was not found as expected. Generating it now...')
             files = make_fits_cut(cutout, color, outdir, basename)
             output_files.extend(files)
             # If the file remains absent, log the error
@@ -150,10 +141,12 @@ def make_rgb(cutout, color_set, outdir, basename):
                 return output_files
     
     # Output RGB file basepath
-    filename_base = os.path.join(outdir, '{0}_{1}'.format(basename, color_set))
+    filename_base = '{0}_{1}'.format(basename, color_set)
     fits_file_list = [fits_filepaths[color] for color in fits_filepaths]
 
-    if cutout['MAKE_RGB_LUPTON']:
+    if rgb_type == 'MAKE_RGB_LUPTON':
+        # Create output subdirectory
+        os.makedirs(outdir, exist_ok=True)
         # TODO: Verify that the comparison of generated size to the requested size is redundant since 
         # this is logged in the FITS cutout file generation
         r_data = fits.getdata(fits_file_list[0], 'SCI')
@@ -172,14 +165,18 @@ def make_rgb(cutout, color_set, outdir, basename):
         image = image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
         luptonnm = filename_base + '_lupton'
         filename = luptonnm+'.png'
-        image.save(filename, format='PNG')
+        filepath = os.path.join(outdir, filename)
+        image.save(filepath, format='PNG')
         output_files.append(filename)
 
-    if cutout['MAKE_RGB_STIFF']:
+    elif rgb_type == 'MAKE_RGB_STIFF':
+        # Create output subdirectory
+        os.makedirs(outdir, exist_ok=True)
         stiffnm = filename_base + '_stiff'
+        tiff_filepath = os.path.join(outdir, stiffnm+'.tiff')
         # Call STIFF using the 3 bands.
         cmd_stiff = 'stiff {}'.format(' '.join(fits_file_list))
-        cmd_stiff += ' -OUTFILE_NAME {}'.format(stiffnm+'.tiff')
+        cmd_stiff += ' -OUTFILE_NAME {}'.format(tiff_filepath)
         cmd_stiff = shlex.split(cmd_stiff)
         try:
             subprocess.call(cmd_stiff)
@@ -188,7 +185,8 @@ def make_rgb(cutout, color_set, outdir, basename):
 
         # Convert the STIFF output from tiff to png and remove the tiff file.
         filename = stiffnm+'.png'
-        cmd_convert = 'convert {0} {1}'.format(stiffnm+'.tiff', filename)
+        filepath = os.path.join(outdir, filename)
+        cmd_convert = 'convert {0} {1}'.format(tiff_filepath, filepath)
         cmd_convert = shlex.split(cmd_convert)
         try:
             subprocess.call(cmd_convert)
@@ -196,38 +194,44 @@ def make_rgb(cutout, color_set, outdir, basename):
         except OSError as e:
             logger.error(e)
         try:
-            os.remove(stiffnm+'.tiff')
+            os.remove(tiff_filepath)
         except OSError as e:
             logger.error(e)
 
     return output_files
 
 def make_fits_cut(cutout, colors, outdir, basename):
-    logger = logging.getLogger(__name__)
     # Array of generated files
     output_files = []
-    # Create output subdirectory
-    os.makedirs(outdir, exist_ok=True)
+    # logger.info('makefits_cut for cutout: {}'.format(cutout))
 
     # Iterate over individual colors (i.e. bands)
     for color in colors.lower():
         # Construct the output filename, with different naming scheme based on coord or coadd position type
         filename = basename + '_{}.fits'.format(color)
         filepath = os.path.join(outdir, filename)
+        # logger.info('target FITS file path: {}'.format(filepath))
         # If file exists, continue to the next color
         if glob.glob(filepath):
             continue
 
+        # Start a timer for the FITS file open
+        start = time.time()
         try:
             # Y-band color must be uppercase; others lowercase
             source_file_color = color.upper() if color.lower() == 'y' else color.lower()
-            hdu_list = fits.open(glob.glob(cutout['TILEDIR'] + '*_{}.fits.fz'.format(source_file_color))[0])
+            data_file_search = cutout['TILEDIR'] + '*_{}.fits.fz'.format(source_file_color)
+            fits_file = glob.glob(data_file_search)
+            # logger.info('data_file_search: {}, fits_file: {}'.format(data_file_search, fits_file))
+
+            hdu_list = fits.open(fits_file[0])
         except IndexError as e:
             print('No FITS file in {0} color band found. Will not create cutouts in this band.'.format(color))
             logger.error('MakeFitsCut - No FITS file in {0} color band found. Will not create cutouts in this band.'.format(color))
             continue        # Just go on to the next color in the list
         
-
+        # # Mark time for FITS file opened
+        # end1 = time.time()
         # Iterate over all HDUs in the tile
         new_hdu_list = fits.HDUList()
         pixelscale = None
@@ -255,107 +259,129 @@ def make_fits_cut(cutout, colors, outdir, basename):
             new_hdu_list.append(new_hdu)
         # Check the size of the cutout compared to the requested size and warn if different
         if pixelscale is not None:
-            dx = int(cutout['SIZE'][1] * ARCMIN_TO_DEG / pixelscale[0] / units.arcmin)        # pixelscale is in degrees (CUNIT)
-            dy = int(cutout['SIZE'][0] * ARCMIN_TO_DEG / pixelscale[1] / units.arcmin)
+            dx = round(float(cutout['SIZE'][1] * ARCMIN_TO_DEG / pixelscale[0] / units.arcmin))        # pixelscale is in degrees (CUNIT)
+            dy = round(float(cutout['SIZE'][0] * ARCMIN_TO_DEG / pixelscale[1] / units.arcmin))
             if (new_hdu_list[0].header['NAXIS1'], new_hdu_list[0].header['NAXIS2']) != (dx, dy):
-                logger.info('MakeFitsCut - {} is smaller than user requested. This is likely because the object/coordinate was in close proximity to the edge of a tile.'.format(('/').join(filename.split('/')[-2:])))
+                logger.info('MakeFitsCut - {} is smaller than user requested. This is likely because the object/coordinate was in close proximity to the edge of a tile. (dx, dy): {}, (NAXIS1, NAXIS2): {}'.format(('/').join(filepath.split('/')[-2:]), (dx, dy), (new_hdu_list[0].header['NAXIS1'], new_hdu_list[0].header['NAXIS2'])))
+        # Create output subdirectory
+        os.makedirs(outdir, exist_ok=True)
         # Save the resulting cutout to disk
-        new_hdu_list.writeto(filename, output_verify='exception', overwrite=True, checksum=False)
+        new_hdu_list.writeto(filepath, output_verify='exception', overwrite=True, checksum=False)
         new_hdu_list.close()
         # Add the output file to the return list
         output_files.append(filename)
+        # # Mark time for FITS output file written
+        # end2 = time.time()
+        # logger.info('Time to open FITS file {} sec. Time to write output FITS file {} sec.'.format(round(float(end1-start), 3), round(float(end2-end1), 3)))
 
     return output_files
 
 def run(conf):
-
-    os.makedirs(conf['outdir'], exist_ok=True)
     # Configure logging
-    logtime = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-    logname = os.path.join(conf['outdir'], 'BulkThumbs_' + logtime + '.log')         # use for local
     formatter = logging.Formatter('%(asctime)s - '+str(rank)+' - %(levelname)-8s - %(message)s')
-    logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
+    logger.addHandler(logging.StreamHandler())
+
+    # Local directory where generated output files will be stored
+    if not conf['outdir']:
+        logger.info('outdir must be a path.')
+        sys.exit(1)
+    outdir = os.path.join(conf['outdir'], '')
+    # Create the output directory.
+    if rank == 0:
+        try:
+            os.makedirs(outdir, exist_ok=True)
+        except OSError as e:
+            logger.error(e)
+            logger.error('Error creating output directory. Aborting job.')
+            sys.stdout.flush()
+            comm.Abort()
+    # Ensure that all processes wait until the output directory exists
+    comm.Barrier()
+
+    # Validate the configuration
+    valid, msg = validate_config(conf)
+    if not valid:
+        logger.error('Invalid config: {}'.format(msg))
+        sys.exit(1)
+
+    # Load default values
+    with open(os.path.join(os.path.dirname(__file__), 'config.default.yaml'), 'r') as configfile:
+        defaults = yaml.load(configfile, Loader=yaml.FullLoader)
+    # Locally mounted directory containing tile data files
+    if not 'tiledir' in conf:
+        conf['tiledir'] = defaults['tiledir']
+    elif conf['tiledir'] != 'auto' and not os.path.exists(conf['tiledir']):
+        logger.info('tiledir path not found.')
+        sys.exit(1)
+    # Set a random Job ID if not provided
+    if 'jobid' not in conf:
+        conf['jobid'] = str(uuid.uuid4())
+
+    # Configure logging to file
+    logname = os.path.join(conf['outdir'], 'cutout_{}.log'.format(conf['jobid']))
     fh = MPILogHandler(logname, comm)
     fh.setLevel(logging.INFO)
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
-    # Validate the configuration and obtain the primary DataFrame object 
-    user_df = validate_config(conf)
+    # Construct the complete cutout request table
+    user_df = construct_cutouts_table(conf)
 
     # Initialize the database connection and basic job info
-    username, jobid, outdir = None, None, None
-    # Only attempt to establish a 
-    if rank == 0:
-        # Get username from config
-        username = conf['username']
-        # Get job ID from config
-        jobid = conf['jobid']
-        # Get database connection and cursor objects using easyaccess
-        uu = conf['username']
-        pp = conf['password']
-        if conf['db'].lower() == 'desdr':
-            # Use the Oracle service account to access the relevant tile path info table if provided in the config
-            if conf['oracle_service_account_db'] and conf['oracle_service_account_user'] and conf['oracle_service_account_pass']:
-                db = conf['oracle_service_account_db']
-                uu = conf['oracle_service_account_user']
-                pp = conf['oracle_service_account_pass']
-            else:
-                db = conf['db'].lower()
-        elif conf['db'].lower() == 'dessci':
-            db = conf['db'].lower()
+    # Get job ID from config
+    jobid = conf['jobid']
+    # Get database connection and cursor objects using easyaccess
+    uu = conf['username']
+    pp = conf['password']
+    if conf['db'].lower() == 'desdr':
+        # Use the Oracle service account to access the relevant tile path info table if provided in the config
+        if conf['oracle_service_account_db'] and conf['oracle_service_account_user'] and conf['oracle_service_account_pass']:
+            db = conf['oracle_service_account_db']
+            uu = conf['oracle_service_account_user']
+            pp = conf['oracle_service_account_pass']
         else:
-            logger.error('Invalid database.')
-            return
-        conn = ea.connect(db, user=uu, passwd=pp)
-        curs = conn.cursor()
-
-        # Create the output directory. Fail if it already exists.
-        outdir = os.path.join(conf['outdir'], '')
-        try:
-            os.makedirs(outdir, exist_ok=True)
-        except OSError as e:
-            print(e)
-            print('Error creating output directory. Aborting job.')
-            # print('Specified jobid already exists in output directory. Aborting job.')
-            conn.close()
-            sys.stdout.flush()
-            comm.Abort()
-
-    # Broadcast variable values to parallel processes
-    username, jobid, outdir = comm.bcast([username, jobid, outdir], root=0)
-
-
-    # xs = float(conf.xsize)
-    # ys = float(conf.ysize)
-    # colors = conf.colors_fits.split(',')
+            db = conf['db'].lower()
+    elif conf['db'].lower() == 'dessci':
+        db = conf['db'].lower()
+    else:
+        logger.error('Invalid database.')
+        return
+    
+    conn = ea.connect(db, user=uu, passwd=pp)
+    curs = conn.cursor()
 
     complete_df = None
+    df = None
+    split_df = None
+    summary = {}
     if rank == 0:
         # Record the configuration of the cutout requests
         summary = {
-            'options': conf,
+            'options': {key: value for (key, value) in conf.items() if key != 'password' },
             'cutouts': user_df,
         }
         # Start a timer for the database query
         start = time.time()
 
-        logger.info('Requested cutouts and options:')
-        logger.info(user_df)
-
         # Subset of DataFrame where position type is RA/DEC coordinates
         coord_df = user_df[user_df['POSITION_TYPE'] == 'coord']
-        coord_df = coord_df[['RA', 'DEC', 'RA_ADJUSTED', 'XSIZE', 'YSIZE']]
-        logger.info('coord_df: {}'.format(coord_df))
+        coord_df_columns = ['RA', 'DEC', 'RA_ADJUSTED', 'XSIZE', 'YSIZE']
+        if len(coord_df) > 0 and all(k in coord_df for k in coord_df_columns):
+            coord_query_df = coord_df[coord_df_columns]
+        else:
+            coord_query_df = []
 
         # Subset of DataFrame where position type is Coadd ID
         coadd_df = user_df[user_df['POSITION_TYPE'] == 'coadd']
-        coadd_df = coadd_df[['COADD_OBJECT_ID', 'XSIZE', 'YSIZE']]
-        logger.info('coadd_df: {}'.format(coadd_df))
+        coadd_df_columns = ['COADD_OBJECT_ID', 'XSIZE', 'YSIZE']
+        if len(coadd_df) > 0 and all(k in coadd_df for k in coadd_df_columns):
+            coadd_query_df = coadd_df[coadd_df_columns]
+        else:
+            coadd_query_df = []
 
         # Define the temporary database tablename and output CSV filepath
-        tablename = 'BTL_'+jobid.upper().replace("-","_")
+        tablename = 'positions_'+jobid.replace("-","_")
         tablename_csv_filepath = os.path.join(outdir, tablename+'.csv')
 
         # Define the catalogs to query based on the chosen database
@@ -373,113 +399,120 @@ def run(conf):
         # Find tile names associated with each position by COORDINATE
         #
         unmatched_coords = {'RA':[], 'DEC':[]}
-
-        # Create the temporary database table from a CSV dump of the DataFrame
-        coord_df.to_csv(tablename_csv_filepath, index=False)
-        conn.load_table(tablename_csv_filepath, name=tablename)
-        logger.info('Created temporary table from CSV')
-        # conn.pandas_to_db(coord_df, tablename=tablename)
-        # logger.info('Created temporary table directly from DataFrame')
-
-        query = '''
-            select temp.RA, temp.DEC, temp.RA_ADJUSTED, temp.RA as ALPHAWIN_J2000, temp.DEC as DELTAWIN_J2000, m.TILENAME, temp.XSIZE, temp.YSIZE
-            from {tablename} temp 
-            left outer join {catalog} m on 
-            (
-                m.CROSSRA0='N' and 
-                (temp.RA between m.URAMIN and m.URAMAX) and 
-                (temp.DEC between m.UDECMIN and m.UDECMAX)
-            ) or 
-            (
-                m.CROSSRA0='Y' and 
-                (temp.RA_ADJUSTED between m.URAMIN-360 and m.URAMAX) and 
-                (temp.DEC between m.UDECMIN and m.UDECMAX)
-            )
-        '''.format(tablename=tablename, catalog=catalog_coord)
         
-        # Overwrite DataFrame with extended table that has tilenames
-        coord_df = conn.query_to_pandas(query)
-        # Drop the temporary table
-        curs.execute('drop table {}'.format(tablename))
-        os.remove(tablename_csv_filepath)
+        if len(coord_query_df) > 0:
+            # Create the temporary database table from a CSV dump of the DataFrame
+            coord_query_df.to_csv(tablename_csv_filepath, index=False)
+            conn.load_table(tablename_csv_filepath, name=tablename.upper())
 
-        # # Refine the values
-        # coord_df = coord_df.replace('-9999',np.nan)
-        # coord_df = coord_df.replace(-9999.000000,np.nan)
+            query = '''
+                select temp.RA, temp.DEC, temp.RA_ADJUSTED, temp.RA as ALPHAWIN_J2000, temp.DEC as DELTAWIN_J2000, m.TILENAME, temp.XSIZE, temp.YSIZE
+                from {tablename} temp 
+                left outer join {catalog} m on 
+                (
+                    m.CROSSRA0='N' and 
+                    (temp.RA between m.URAMIN and m.URAMAX) and 
+                    (temp.DEC between m.UDECMIN and m.UDECMAX)
+                ) or 
+                (
+                    m.CROSSRA0='Y' and 
+                    (temp.RA_ADJUSTED between m.URAMIN-360 and m.URAMAX) and 
+                    (temp.DEC between m.UDECMIN and m.UDECMAX)
+                )
+            '''.format(tablename=tablename.upper(), catalog=catalog_coord)
+            
+            # Overwrite DataFrame with extended table that has tilenames
+            coord_query_df = conn.query_to_pandas(query)
+            # Drop the temporary table
+            curs.execute('drop table {}'.format(tablename.upper()))
+            # os.remove(tablename_csv_filepath)
 
-        # Record unmatched positions
-        dftemp = coord_df[ (coord_df['TILENAME'].isnull()) ]
-        unmatched_coords['RA'] = dftemp['RA'].tolist()
-        unmatched_coords['DEC'] = dftemp['DEC'].tolist()
-        # # Drop unmatched entries from the DataFrame
-        # coord_df = coord_df.dropna(axis=0, how='any', subset=['TILENAME'])
+            # Record unmatched positions
+            dftemp = coord_query_df[ (coord_query_df['TILENAME'].isnull()) ]
+            unmatched_coords['RA'] = dftemp['RA'].tolist()
+            unmatched_coords['DEC'] = dftemp['DEC'].tolist()
 
         #############################################################
         # Find tile names associated with each position by COADD ID
         #
         unmatched_coadds = []
 
-        # Create the temporary database table from a CSV dump of the DataFrame
-        coadd_df.to_csv(tablename_csv_filepath, index=False)
-        conn.load_table(tablename_csv_filepath, name=tablename)
+        if len(coadd_query_df) > 0:
+            # Create the temporary database table from a CSV dump of the DataFrame
+            coadd_query_df.to_csv(tablename_csv_filepath, index=False)
+            conn.load_table(tablename_csv_filepath, name=tablename.upper())
 
-        query = '''
-            select temp.COADD_OBJECT_ID, m.ALPHAWIN_J2000, m.DELTAWIN_J2000, m.RA, m.DEC, m.TILENAME, temp.XSIZE, temp.YSIZE
-            from {tablename} temp 
-            left outer join {catalog} m on temp.COADD_OBJECT_ID=m.COADD_OBJECT_ID
-        '''.format(tablename=tablename, catalog=catalog_coadd)
-        
-        # Overwrite DataFrame with extended table that has tilenames
-        coadd_df = conn.query_to_pandas(query)
-        # Drop the temporary table
-        curs.execute('drop table {}'.format(tablename))
-        os.remove(tablename_csv_filepath)
+            query = '''
+                select temp.COADD_OBJECT_ID, temp.XSIZE, temp.YSIZE, m.ALPHAWIN_J2000, m.DELTAWIN_J2000, m.RA, m.DEC, m.TILENAME
+                from {tablename} temp 
+                left outer join {catalog} m on temp.COADD_OBJECT_ID=m.COADD_OBJECT_ID
+            '''.format(tablename=tablename.upper(), catalog=catalog_coadd)
+            
+            # Overwrite DataFrame with extended table that has tilenames
+            coadd_query_df = conn.query_to_pandas(query)
+            coadd_query_df['COADD_OBJECT_ID'] = coadd_query_df['COADD_OBJECT_ID'].astype('str')
+            # Drop the temporary table
+            curs.execute('drop table {}'.format(tablename.upper()))
+            # os.remove(tablename_csv_filepath)
 
-        # # Refine the values
-        # coadd_df = coadd_df.replace('-9999',np.nan)
-        # coadd_df = coadd_df.replace(-9999.000000,np.nan)
-        
-        # Record unmatched positions
-        dftemp = coadd_df[ (coadd_df['TILENAME'].isnull()) | (coadd_df['ALPHAWIN_J2000'].isnull()) | (coadd_df['DELTAWIN_J2000'].isnull()) | (coadd_df['RA'].isnull()) | (coadd_df['DEC'].isnull()) ]
-        unmatched_coadds = dftemp['COADD_OBJECT_ID'].tolist()
-        # # Drop unmatched entries from the DataFrame
-        # coadd_df = coadd_df.dropna(axis=0, how='any', subset=['TILENAME','ALPHAWIN_J2000','DELTAWIN_J2000','RA','DEC'])
+            # Record unmatched positions
+            dftemp = coadd_query_df[ (coadd_query_df['TILENAME'].isnull()) | (coadd_query_df['ALPHAWIN_J2000'].isnull()) | (coadd_query_df['DELTAWIN_J2000'].isnull()) | (coadd_query_df['RA'].isnull()) | (coadd_query_df['DEC'].isnull()) ]
+            unmatched_coadds = dftemp['COADD_OBJECT_ID'].tolist()
 
-        # Merge results with the original sub-df
-        complete_df = pd.merge(left=user_df, right=coord_df, on=['RA', 'DEC'], how='left')
-        complete_df = pd.merge(left=complete_df, right=coadd_df, on=['COADD_OBJECT_ID'], how='left')
+        try:
+            # Merge results with the original sub-df
+            for row_index, cutout in coord_df.iterrows():
+                for param in ['TILENAME', 'ALPHAWIN_J2000', 'DELTAWIN_J2000']:
+                    value = coord_query_df.loc[(abs(coord_query_df['RA'] - cutout['RA']) < COORD_PRECISION) & (abs(coord_query_df['DEC'] - cutout['DEC']) < COORD_PRECISION), param]
+                    value = value.reset_index(drop=True)
+                    if len(value) > 0:
+                        coord_df.at[row_index, param] = value[0]
+            for row_index, cutout in coadd_df.iterrows():
+                for param in ['TILENAME', 'ALPHAWIN_J2000', 'DELTAWIN_J2000', 'RA', 'DEC']:
+                    value = coadd_query_df.loc[coadd_query_df['COADD_OBJECT_ID'] == cutout['COADD_OBJECT_ID'], param]
+                    value = value.reset_index(drop=True)
+                    if len(value) > 0:
+                        coadd_df.at[row_index, param] = value[0]
+        except Exception as e:
+            logger.error(str(e).strip())
+            sys.exit(1)
+
+        #############################################################
+        # Recombine the subcomponent DataFrames
+        #
+        complete_df = pd.concat([coord_df, coadd_df])
 
         # Refine the values
         complete_df = complete_df.replace('-9999',np.nan)
         complete_df = complete_df.replace(-9999.000000,np.nan)
         
         # Drop unmatched entries from the DataFrame
-        complete_df = complete_df.dropna(axis=0, how='any', subset=['TILENAME','ALPHAWIN_J2000','DELTAWIN_J2000','RA','DEC'])
-
-
-        #############################################################
-        # Recombine the subcomponent DataFrames
-        #
-        # complete_df = pd.concat([coord_df, coadd_df])
+        complete_df = complete_df.dropna(axis=0, how='any', subset=['TILENAME', 'ALPHAWIN_J2000', 'DELTAWIN_J2000'])
         complete_df = complete_df.sort_values(by=['TILENAME'])
         # Requesting multiple cutouts of the same position with different sizes is not allowed.
         complete_df = complete_df.drop_duplicates(['RA','DEC'], keep='first')
+        complete_df.reset_index(drop=True)
+        logger.info('Complete positions table (rank={}):\n{}'.format(rank, complete_df))
 
         end1 = time.time()
         query_elapsed = '{0:.2f}'.format(end1-start)
-        print('Querying took (s): ' + query_elapsed)
         logger.info('Querying took (s): ' + query_elapsed)
         summary['query_time'] = query_elapsed
+        split_df = np.array_split(complete_df, nprocs)
 
-    # Split the table into equal parts and distribute to the parallel processes
-    df = comm.scatter(np.array_split(complete_df, nprocs), root=0)
+    # Split the table into roughly equal parts and distribute to the parallel processes
+    df = comm.scatter(split_df, root=0)
+    df.reset_index(drop=True)
+    logger.info('Table subset (rank={}):\n {}'.format(rank, df))
+    
+    all_generated_files = []
 
     qtemplate = "select FITS_IMAGES from {} where tilename = '{}' and band = 'i'"
     table_path = "MCARRAS2.{}_TILE_PATH_INFO".format(conf['release'])
     # Determine the file paths for each unique relevant tile  
     for tilename in df['TILENAME'].unique():
         try:
-            if conf.tiledir != 'auto':
+            if conf['tiledir'] != 'auto':
                 tiledir = os.path.join(conf.tiledir, tilename)
             else:
                 dftile = conn.query_to_pandas(qtemplate.format(table_path, tilename))
@@ -488,7 +521,6 @@ def run(conf):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
                 elif conf['release'] in ('SVA1', 'Y1A1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
-                logger.info('Using DB and table {} to determine paths...'.format(table_path))
             # Clean up path formatting
             tiledir = os.path.join(tiledir, '')
             # Store tiledir in table 
@@ -511,43 +543,55 @@ def run(conf):
             cutout_dirname = cutout['COADD_OBJECT_ID']
         else:
             cutout_dirname = 'DESJ' + _DecConverter(cutout['RA'], cutout['DEC'])
+        cutout_basename = 'DESJ' + _DecConverter(cutout['RA'], cutout['DEC'])
+        # Store the sexagecimal representation of the position
+        df.at[row_index, 'SEXAGECIMAL'] = cutout_basename
         # Output directory stucture: [base outdir path]/[source tile name]/[position]
         cutout_outdir = os.path.join(outdir, cutout['TILENAME'], cutout_dirname)
 
         # Make all FITS cutout files necessary for requested FITS files and any RGB files
         all_colors = ''
-        for rgb_type in [['MAKE_FITS', 'FITS_COLORS'], ['MAKE_RGB_STIFF', 'RGB_STIFF_COLORS'], ['MAKE_RGB_LUPTON', 'RGB_LUPTON_COLORS']]:
+        for rgb_type in [['MAKE_FITS', 'COLORS_FITS'], ['MAKE_RGB_STIFF', 'RGB_STIFF_COLORS'], ['MAKE_RGB_LUPTON', 'RGB_LUPTON_COLORS']]:
             if cutout[rgb_type[0]]:
                 # Add the color if it is an acceptable letter do not duplicate
                 for color in cutout[rgb_type[1]]:
                     if color in 'grizy' and color not in all_colors:
                         all_colors += color
-        for color in all_colors:
-            output_files = make_fits_cut(cutout, color, cutout_outdir, cutout_dirname)
-            generated_files.extend(output_files)
+        output_files = make_fits_cut(cutout, all_colors, cutout_outdir, cutout_basename)
+        generated_files.extend(output_files)
+        all_generated_files.extend(output_files)
 
         # Now that all required FITS files have been generated, create any requested RGB images
         for rgb_type in [['MAKE_RGB_STIFF', 'RGB_STIFF_COLORS'], ['MAKE_RGB_LUPTON', 'RGB_LUPTON_COLORS']]:
             if cutout[rgb_type[0]]:
                 color_sets = cutout[rgb_type[1]].split(';')
                 for color_set in color_sets:
-                    output_files = make_rgb(cutout, color_set, cutout_outdir, cutout_dirname)
+                    output_files = make_rgb(cutout, rgb_type[0], color_set, cutout_outdir, cutout_basename)
                     generated_files.extend(output_files)
+                    all_generated_files.extend(output_files)
 
         # Add new output files to the list of all files generated for this position
         file_list = json.loads(cutout['FILES'])
-        df.at[row_index, 'FILES'] = json.dumps(file_list.extend(generated_files))
+        df.at[row_index, 'FILES'] = json.dumps(file_list + generated_files)
 
     # Close database connection
     conn.close()
     # Synchronize parallel processes at this line to ensure all processing is complete
     comm.Barrier()
-
+    # Gather all sub-tables back into one unified table
+    gathered_df = comm.gather((df), root=0)
+    # Gather the lists of all files generated from parallel processes
+    all_generated_files = comm.gather(all_generated_files, root=0)
     if rank == 0:
+        # Recombine the slices of the complete DataFrame
+        complete_df = pd.concat(gathered_df)
+        complete_df.reset_index(drop=True)
+        # Save the entire table in the job summary file
+        summary['cutouts'] = json.loads(complete_df.to_json(orient="records"))
+
         logger.info('All processes finished.')
         end2 = time.time()
         processing_time = '{0:.2f}'.format(end2-end1)
-        print('Processing took (s): ' + processing_time)
         logger.info('Processing took (s): ' + processing_time)
         summary['processing_time'] = processing_time
 
@@ -563,66 +607,47 @@ def run(conf):
         logger.info('Total file size on disk: {}'.format(dirsize))
         summary['size_on_disk'] = str(dirsize)
 
-        # Recombine the slices of the complete DataFrame
-        complete_df = comm.gather(df, root=0)
-
-        all_generated_files = []
-        for row_index, cutout in complete_df.iterrows():
-            file_list = json.loads(cutout['FILES'])
-            all_generated_files.extend(file_list)
-            
-        # files = glob.glob(os.path.join(outdir, '*/*'))
+        # Record the list of all generated files
+        all_generated_files = [y for x in all_generated_files for y in x]
         logger.info('Total number of files: {}'.format(len(all_generated_files)))
         summary['number_of_files'] = len(all_generated_files)
-        # Save the DataFrame in the job summary file
-        summary['cutouts'] = json.loads(complete_df.to_json(orient="records"))
 
-        # jsonfile = os.path.join(outdir, 'BulkThumbs_'+logtime+'_SUMMARY.json')
+        # Store the job summary info in a JSON-formatted file in a canonical location
         jsonfile = os.path.join(outdir, 'summary.json')
         with open(jsonfile, 'w') as fp:
-            json.dump(summary, fp)
+            json.dump(summary, fp, indent=2)
 
 def validate_config(conf):
+    # Cutout positions table must be present
+    if 'positions' not in conf or not isinstance(conf['positions'], str):
+        msg = 'Invalid cutout positions table'
+        logger.error(msg)
+        return False, msg
+    # User-defined defaults must be valid
+    valid, msg = validate_user_defaults(conf)
+    if not valid:
+        logger.error('Invalid config: {}'.format(msg))
+        return False, msg
+    # Cutout positions table must be valid
+    valid, msg = validate_positions_table(conf['positions'])
+    if not valid:
+        logger.error('Invalid cutout positions table: {}'.format(msg))
+        return False, msg
+    return True, ''
 
-    logger = logging.getLogger(__name__)
+def construct_cutouts_table(conf):
     # Load default values
     with open(os.path.join(os.path.dirname(__file__), 'config.default.yaml'), 'r') as configfile:
         defaults = yaml.load(configfile, Loader=yaml.FullLoader)
-    logger.info('Defaults file loaded: {}'.format(json.dumps(defaults, indent=2)))
-    logger.info('positions: {}'.format(conf['positions']))
     # Import CSV-formatted table of positions (and options) to a DataFrame object
     try:
-        df = pd.DataFrame(pd.read_csv(StringIO(conf['positions']), skipinitialspace=True, dtype={
-            'COADD_OBJECT_ID': str,
-            'RA': np.float64,
-            'DEC': np.float64,
-            'XSIZE': np.float64,
-            'YSIZE': np.float64,
-            'FITS_COLORS': str,
-            'RGB_STIFF_COLORS': str,
-            'RGB_LUPTON_COLORS': str,
-            'MAKE_FITS': np.float64,
-            'MAKE_RGB_STIFF': np.float64,
-            'MAKE_RGB_LUPTON': np.float64,
-        },
-        na_values={
-            'COADD_OBJECT_ID': '',
-            'RA': '',
-            'DEC': '',
-            'XSIZE': '',
-            'YSIZE': '',
-            'FITS_COLORS': '',
-            'RGB_STIFF_COLORS': '',
-            'RGB_LUPTON_COLORS': '',
-        }
-        ))
+        df = positions_csv_to_dataframe(conf['positions'])
     except Exception as e:
         logger.info('Error importing positions CSV file: {}'.format(str(e).strip()))
         sys.exit(1)
 
-    logger.info('df: {}'.format(df))
     # Ensure that each parameter column is populated in the DataFrame
-    for param in ['XSIZE', 'YSIZE', 'FITS_COLORS', 'RGB_STIFF_COLORS', 'RGB_LUPTON_COLORS', 'MAKE_FITS', 'MAKE_RGB_LUPTON', 'MAKE_RGB_STIFF']:
+    for param in ['xsize', 'ysize', 'colors_fits', 'rgb_stiff_colors', 'rgb_lupton_colors', 'make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
         # If the parameter was not included in the CSV file
         if not param in df:
             # Check if a global default was provided by the user.
@@ -643,58 +668,53 @@ def validate_config(conf):
     df['FILES'] = ['[]' for c in range(len(df))]
     # Add a column for the path to the associated data tile
     df['TILEDIR'] = ['' for c in range(len(df))]
+    # Add a column for the name of the associated data tile
+    df['TILENAME'] = ['' for c in range(len(df))]
+    # Add a column for the sexagecimal representation of the position
+    df['SEXAGECIMAL'] = ['' for c in range(len(df))]
 
     # Iterate over each row and validate parameter values
     for row_index, cutout in df.iterrows():
-        # logger.info('\n{}:\n{}'.format(row_index, cutout))
-        # If both COADD ID and RA/DEC coords are specified, fail
-        if 'COADD_OBJECT_ID' in cutout and isinstance(cutout['COADD_OBJECT_ID'], str) and ('RA' in cutout and not math.isnan(cutout['RA']) or 'DEC' in cutout and not math.isnan(cutout['DEC'])):
-            logger.info('Only COADD_OBJECT_ID or RA/DEC coordinates my be specified, not both.')
-            sys.exit(1)
-        # If both RA and DEC coords are not specified, fail
-        if not all(k in cutout for k in ['RA', 'DEC']) or any(math.isnan(cutout[k]) for k in ['RA', 'DEC']):
-            if not 'COADD_OBJECT_ID' in cutout or not isinstance(cutout['COADD_OBJECT_ID'], str):
-                logger.info('RA and DEC must both be specified.')
-                sys.exit(1)
         # Label the cutout with the type of position to simplify subsequent logic
-        if 'COADD_OBJECT_ID' in cutout and isinstance(cutout['COADD_OBJECT_ID'], str):
+        if 'coadd_object_id' in cutout and isinstance(cutout['coadd_object_id'], str):
             # The position is based on Coadd ID
             df.at[row_index, 'POSITION_TYPE'] = 'coadd'
         else:
             # The position is based on RA/DEC coordinate
             df.at[row_index, 'POSITION_TYPE'] = 'coord'
+            # Round to the desired precision
+            coord_significant_digits = abs(round(math.log(COORD_PRECISION, 10.0)))
+            ra_val = round(float(cutout['ra']), coord_significant_digits)
+            dec_val = round(float(cutout['dec']), coord_significant_digits)
+            df.at[row_index, 'ra']  = ra_val
+            df.at[row_index, 'dec'] = dec_val
             # Set the adjusted RA value
-            df.at[row_index, 'RA_ADJUSTED'] = 360-cutout['RA'] if cutout['RA'] > 180 else cutout['RA']
-        # Ensure numerical values with limited ranges are respected by coercing invalid values
-        for param in ['XSIZE', 'YSIZE', 'RGB_MINIMUM', 'RGB_STRETCH', 'RGB_ASINH']:
-            param_min = '{}_MIN'.format(param)
-            param_max = '{}_MAX'.format(param)
+            df.at[row_index, 'RA_ADJUSTED'] = 360-ra_val if ra_val > 180 else ra_val
+        # Set any empty numerical values
+        for param in ['xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
             # If the param is not specified or is not a number value
             if not param in cutout or math.isnan(cutout[param]):
                 # Check if a global default was provided by the user.
-                if param in conf:
+                if param in conf and conf[param] != 0.0:
                     default_val = conf[param]
                 # If not, use the default nominal value
                 else:
                     default_val = defaults[param]
                 df.at[row_index, param] = default_val
-            # If the size is too small, rail at minimum, if there is a minimum
-            elif param_min in defaults and cutout[param] < defaults[param_min]:
-                df.at[row_index, param] = defaults[param_min]
-            # If the size is too large, rail at maximum, if there is a maximum
-            elif param_max in defaults and cutout[param] > defaults[param_max]:
-                df.at[row_index, param] = defaults[param_max]
-        # Ensure that colors are set correctly if output boolean flags are set
-        for param in ['MAKE_FITS', 'MAKE_RGB_STIFF', 'MAKE_RGB_LUPTON']:
+
+        # Ensure that colors are set correctly if output boolean flags are set.
+        # The default values are true booleans, but the cutout positions table
+        # values are pseudo-boolean numeric values. Translate accordingly.
+        for param in ['make_fits', 'make_rgb_stiff', 'make_rgb_lupton']:
             if not param in cutout or math.isnan(cutout[param]):
                 # Check if a global default was provided by the user.
                 if param in conf:
-                    default_val = conf[param] # == True
+                    default_val = 1 if conf[param] == True else 0
                 # If not, use the default nominal value
                 else:
-                    default_val = defaults[param] # == True
+                    default_val = 1 if defaults[param] == True else 0
                 df.at[row_index, param] = default_val
-        for param in ['FITS_COLORS', 'RGB_STIFF_COLORS', 'RGB_LUPTON_COLORS']:
+        for param in ['colors_fits', 'rgb_stiff_colors', 'rgb_lupton_colors']:
             if not param in cutout or not isinstance(cutout[param], str):
                 # Check if a global default was provided by the user.
                 if param in conf:
@@ -703,69 +723,253 @@ def validate_config(conf):
                 else:
                     default_val = defaults[param]
                 df.at[row_index, param] = default_val
-            else:
-                color_sets = cutout[param].lower().split(';')
-                color_sets_filtered_ordered = []
-                for color_set in color_sets:
-                    color_set_filtered = filter_colors(color_set)
-                    valid_num_colors = True
-                    if param in ['FITS_COLORS'] and len(color_set_filtered) == 0:
-                        valid_num_colors = False
-                    # Exactly three colors must be specified for RGB images
-                    elif param in ['RGB_STIFF_COLORS', 'RGB_LUPTON_COLORS'] and len(color_set_filtered) != 3:
-                        valid_num_colors = False
-                    # Must have valid number of colors and not be a duplicate
-                    if valid_num_colors and color_set_filtered not in color_sets_filtered_ordered:
-                        color_sets_filtered_ordered.append(color_set_filtered)
-                # Store in DataFrame as semi-colon-delimited list
-                color_sets_filtered_ordered_str = ';'.join(color_sets_filtered_ordered)
-                # If there are no valid color sets, fail if that output type is requested
-                if not color_sets_filtered_ordered_str:
-                    if (param == 'FITS_COLORS' and cutout['MAKE_FITS']) or (param == 'RGB_STIFF_COLORS' and cutout['MAKE_RGB_STIFF']) or (param == 'RGB_LUPTON_COLORS' and cutout['MAKE_RGB_LUPTON']):
-                        logger.info('At least one valid "{}" color set is required.'.format(param))
-                        sys.exit(1)
-                df.at[row_index, param] = color_sets_filtered_ordered_str
     
-
-    # Display processed DataFrame
-    logger.info('\nProcessed DataFrame {}'.format(df))
-    
-    # Locally mounted directory containing tile data files
-    if not conf['tiledir']:
-        conf['tiledir'] = 'auto'
-    elif conf['tiledir'] != 'auto' and not os.path.exists(conf['tiledir']):
-        logger.info('tiledir path not found.')
-        sys.exit(1)
-    # Local directory where generated output files will be stored
-    if not conf['outdir']:
-        logger.info('outdir must be a path.')
-        sys.exit(1)
-
-    if conf['db'].upper() not in VALID_DATA_SOURCES:
-        logger.info('Please select a valid database: {}.'.format(VALID_DATA_SOURCES))
-        sys.exit(1)
-    if conf['release'].upper() not in VALID_DATA_SOURCES[conf['db'].upper()]:
-        logger.info('Please select a valid data release: {}.'.format(VALID_DATA_SOURCES[conf['db'].upper()]))
-        sys.exit(1)
-    if not conf['positions']: # or not os.path.exists(conf['positions']):
-        logger.info('Please specify a valid CSV-formatted table file containing the cutout positions.')
-        sys.exit(1)
-    if not conf['username'] or not conf['password']:
-        logger.info('A valid username and password must be provided.')
-        sys.exit(1)
-    if 'jobid' not in conf or not conf['jobid']:
-        conf['jobid'] = str(uuid.uuid4())
-    elif not isinstance(conf['jobid'], str):
-        logger.info('jobid must be a string if specified')
-        sys.exit(1)
-    
+    # The column heading must be uppercase to allow easier integration with the Oracle DB query results for the tile names
+    df = df.rename(str.upper, axis='columns')
     return df
+
+def positions_csv_to_dataframe(positions_csv_text):
+    '''Import CSV-formatted table of positions (and options) to a DataFrame object'''
+    df = None
+    try:
+        positions_list = positions_csv_text.split('\n')
+        positions_list[0] = positions_list[0].lower()
+        positions_csv_text_lowercase_column_headings = '\n'.join(positions_list)
+        df = pd.DataFrame(pd.read_csv(StringIO(positions_csv_text_lowercase_column_headings), skipinitialspace=True, dtype={
+            'coadd_object_id': str,
+            'ra': np.float64,
+            'dec': np.float64,
+            'xsize': np.float64,
+            'ysize': np.float64,
+            'colors_fits': str,
+            'rgb_stiff_colors': str,
+            'rgb_lupton_colors': str,
+            # The boolean values are represented as float, where zero == False and non-zero == True.
+            # If 0 or 1 (no-zero) is specified, it overrides the user-defined default value. If nothing is specified,
+            # the NaN value indicates to use the user-defined default value for that cutout position.
+            'make_fits': np.float64,
+            'make_rgb_stiff': np.float64,
+            'make_rgb_lupton': np.float64,
+            'rgb_minimum': np.float64,
+            'rgb_stretch': np.float64,
+            'rgb_asinh': np.float64,
+        },
+        na_values={
+            'coadd_object_id': '',
+            'ra': '',
+            'dec': '',
+            'xsize': '',
+            'ysize': '',
+            'colors_fits': '',
+            'rgb_stiff_colors': '',
+            'rgb_lupton_colors': '',
+            'make_fits': '',
+            'make_rgb_stiff': '',
+            'make_rgb_lupton': '',
+            'rgb_minimum': '',
+            'rgb_stretch': '',
+            'rgb_asinh': '',
+        }))
+    except Exception as e:
+        status = STATUS_ERROR
+        msg = str(e).strip()
+        return status, msg
+    return df
+
+def is_valid_color_band(color):
+    return isinstance(color, str) and len(color) == 1 and color.lower() in 'grizy'
+
+def valid_fits_colors(colors_string):
+    '''A FITS color set is a string of color bands with at least one color band specified'''
+    # Ignore case of letters
+    colors_string = colors_string.lower()
+    if not colors_string or not isinstance(colors_string, str):
+        return False
+    valid_colors = ''
+    for color in colors_string:
+        # Detect invalid color bands
+        if not is_valid_color_band(color):
+            return False
+        # Detect redundant colors
+        if color in valid_colors:
+            return False
+        # Append valid color to redundancy checking string
+        valid_colors += color
+    return True
+
+def valid_rgb_color_set(colors_string):
+    '''An RGB color set is a three-character string of color bands'''
+    # Ignore case of letters
+    colors_string = colors_string.lower()
+    if not isinstance(colors_string, str):
+        return False
+    # There must be exactly three colors
+    if len(colors_string) != 3:
+        return False
+    valid_colors = ''
+    for color in colors_string:
+        # Detect redundant colors
+        if color in valid_colors:
+            return False
+        # Detect invalid color bands
+        if not is_valid_color_band(color):
+            return False
+        # Append valid color to redundancy checking string
+        valid_colors += color
+    return True
+
+def valid_rgb_color_sets(color_set_string):
+    '''The color sets are specified in a semi-colon-delineated string of color band triplets'''
+    if not isinstance(color_set_string, str):
+        return False
+    valid_color_sets = []
+    for color_set in color_set_string.split(';'):
+        # Detect redundant color sets
+        if color_set in valid_color_sets:
+            return False
+        # Detect invalid color sets
+        if not valid_rgb_color_set(color_set):
+            return False
+        valid_color_sets.append(color_set)
+    return True
+
+def validate_user_defaults(conf):
+    msg = ''
+    if not all(k in conf for k in ['username', 'password']) or not conf['username'] or not conf['password']:
+        msg = 'A valid username and password must be provided.'
+        return False, msg
+    if 'jobid' in conf and not isinstance(conf['jobid'], str):
+        msg = 'jobid must be a string if specified.'
+        return False, msg
+
+    # Load the default values
+    with open(os.path.join(os.path.dirname(__file__), 'config.default.yaml'), 'r') as configfile:
+        defaults = yaml.load(configfile, Loader=yaml.FullLoader)
+
+    # Validate selected database
+    if 'db' not in conf or conf['db'].upper() not in VALID_DATA_SOURCES:
+        msg = 'Please select a valid database: {}.'.format(VALID_DATA_SOURCES)
+        return False, msg
+    if 'release' not in conf or conf['release'].upper() not in VALID_DATA_SOURCES[conf['db'].upper()]:
+        msg = 'Please select a valid data release: {}.'.format(VALID_DATA_SOURCES[conf['db'].upper()])
+        return False, msg
+
+    # Validate default cutout size dimensions
+    for param in ['xsize', 'ysize']:
+        if param in conf:
+            if not isinstance(conf[param], (int, float)):
+                return False, 'Cutout size dimensions (if supplied) must be numeric values'
+            if conf[param] < defaults['{}_min'.format(param)]:
+                return False, 'Cutout size minimum value is {}'.format(defaults['{}_min'.format(param)])
+            if conf[param] > defaults['{}_max'.format(param)]:
+                return False, 'Cutout size maximum value is {}'.format(defaults['{}_max'.format(param)])
+
+    # Validate default boolean flags for which images to produce
+    for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
+        if param in conf:
+            if not isinstance(conf[param], bool):
+                return False, '"{}" must be a boolean value'.format(param)
+    # Validate default FITS color bands
+    for param in ['colors_fits']:
+        if param in conf:
+            if not valid_fits_colors(conf[param]):
+                return False, 'Invalid FITS color set specified: "{}" '.format(param)
+    # Validate default RGB color sets
+    for param in ['rgb_stiff_colors', 'rgb_lupton_colors']:
+        if param in conf:
+            if not valid_rgb_color_sets(conf[param]):
+                return False, 'Invalid RGB color set specified: "{}" '.format(param)
+    # Validate default Lupton parameters
+    for param in ['rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
+        if param in conf:
+            if not isinstance(conf[param], (int, float)):
+                return False, '"{}" must have a numeric value'.format(param)
+    return True, msg
+
+def validate_positions_table(positions_csv_text):
+    msg = ''
+    valid_column_headers = [
+        'ra',
+        'dec',
+        'coadd_object_id',
+        'xsize',
+        'ysize',
+        'fits_colors',
+        'rgb_stiff_colors',
+        'rgb_lupton_colors',
+        'rgb_minimum',
+        'rgb_stretch',
+        'rgb_asinh',
+        'make_fits',
+        'make_rgb_stiff',
+        'make_rgb_lupton',
+    ]
+    try:
+        # Import the table as a DataFrame
+        df = positions_csv_to_dataframe(positions_csv_text)
+        # Load the default values
+        with open(os.path.join(os.path.dirname(__file__), 'config.default.yaml'), 'r') as configfile:
+            defaults = yaml.load(configfile, Loader=yaml.FullLoader)
+    except Exception as e:
+        msg = str(e).strip()
+        return False, msg
+    # Check for invalid column headers
+    invalid_column_headers = []
+    for column_header in df.columns:
+        if column_header.lower() not in valid_column_headers:
+            invalid_column_headers.append(column_header)
+    if invalid_column_headers:
+        return False, 'Invalid columns in positions table: {}'.format(invalid_column_headers)
+    # Iterate over each position
+    for row_index, cutout in df.iterrows():
+        valid_coadd_id = valid_coords = False
+        if 'coadd_object_id' in cutout and isinstance(cutout['coadd_object_id'], str):
+            valid_coadd_id = True
+        if 'ra' in cutout and not math.isnan(cutout['ra']) and 'dec' in cutout and not math.isnan(cutout['dec']):
+            valid_coords = True
+        # If both COADD ID and RA/DEC coords are specified, fail
+        if valid_coords and valid_coadd_id:
+            return False, 'Only COADD_OBJECT_ID or RA/DEC coordinates my be specified, not both.'
+        # Either RA/DEC or Coadd ID must be specified
+        if not valid_coords and not valid_coadd_id:
+            return False, 'Each row must have either RA/DEC or COADD_OBJECT_ID'
+    
+        # Ensure numerical values with limited ranges are respected
+        for param in ['xsize', 'ysize', 'rgb_minimum', 'rgb_stretch', 'rgb_asinh']:
+            param_min = '{}_min'.format(param)
+            param_max = '{}_max'.format(param)
+            # If the param is not specified or is not a number value
+            if param in cutout and not math.isnan(cutout[param]):
+                if not isinstance(cutout[param], (int, float)):
+                    return False, 'Invalid parameter value for "{}"'.format(param)
+                # If the size is too small, rail at minimum, if there is a minimum
+                if param_min in defaults and cutout[param] < defaults[param_min]:
+                    return False, 'Parameter "{}" is too small: minimum valid value is "{}"'.format(param, param_min)
+                # If the size is too large, rail at maximum, if there is a maximum
+                if param_max in defaults and cutout[param] > defaults[param_max]:
+                    return False, 'Parameter "{}" is too large: maximum valid value is "{}"'.format(param, param_max)
+        # Validate boolean flags for which images to produce
+        for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
+            if param in cutout:
+                if not math.isnan(cutout[param]) and not isinstance(cutout[param], (int, float)) :
+                    return False, '"{}" must have value 0 (disabled) or 1 (enabled) if provided in the cutout positions table.'.format(param)
+        # Validate color strings
+        if 'colors_fits' in cutout and isinstance(cutout['colors_fits'], str) and len(cutout['colors_fits']) > 0:
+            if not valid_fits_colors(cutout['colors_fits']):
+                return False, 'Invalid FITS colors'
+        if 'rgb_stiff_colors' in cutout and isinstance(cutout['rgb_stiff_colors'], str) and len(cutout['rgb_stiff_colors']) > 0:
+            if not valid_rgb_color_sets(cutout['rgb_stiff_colors']):
+                return False, 'Invalid STIFF RGB colors'
+        if 'rgb_lupton_colors' in cutout and isinstance(cutout['rgb_lupton_colors'], str) and len(cutout['rgb_lupton_colors']) > 0:
+            if not valid_rgb_color_sets(cutout['rgb_lupton_colors']):
+                return False, 'Invalid Lupton RGB colors'
+    return True, msg
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="This program will make any number of cutouts, using the master tiles.")
 
     # Config file
-    parser.add_argument('--config', type=str, required=True, help='Optional file to list all these arguments in and pass it along to bulkthumbs.')
+    parser.add_argument('--config', type=str, required=True, help='YAML-formatted configuration file specifying cutout positions and options.')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -773,43 +977,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    # Load the configuration file from disk
     with open(args.config, 'r') as configfile:
         conf = yaml.load(configfile, Loader=yaml.FullLoader)
 
     run(conf)
-
-    # # Object inputs
-    # parser.add_argument('--csv', type=str, required=False, help='A CSV with columns \'COADD_OBJECT_ID \' or \'RA,DEC\'')
-    # parser.add_argument('--ra', nargs='*', required=False, type=float, help='RA (decimal degrees)')
-    # parser.add_argument('--dec', nargs='*', required=False, type=float, help='DEC (decimal degrees)')
-    # parser.add_argument('--coadd', nargs='*', required=False, help='Coadd ID for exact object matching.')
-
-    # # Jobs
-    # parser.add_argument('--make_fits', action='store_true', help='Creates FITS files in the desired bands of the cutout region.')
-    # parser.add_argument('--make_rgb_lupton', action='store_true', help='Creates 3-color images from the color bands you select, from reddest to bluest. This method uses the Lupton RGB combination method.')
-    # parser.add_argument('--make_rgb_stiff', action='store_true', help='Creates 3-color images from the color bands you select, from reddest to bluest. This method uses the program STIFF to combine the images.')
-    # parser.add_argument('--return_list', action='store_true', help='Saves list of inputted objects and their matched tiles to user directory.')
-
-    # # Parameters
-    # parser.add_argument('--xsize', default=1.0, help='Size in arcminutes of the cutout x-axis. Default: 1.0')
-    # parser.add_argument('--ysize', default=1.0, help='Size in arcminutes of the cutout y-axis. Default: 1.0')
-    # parser.add_argument('--colors_fits', default='I', type=str.upper, help='Color bands for the fits cutout. Default: i')
-    # parser.add_argument('--colors_rgb', action='append', type=str.lower, metavar='R,G,B', help='Bands from which to combine the the RGB image, e.g.: z,r,g. Call multiple times for multiple colors combinations, e.g.: --colors_rgb z,r,g --colors_rgb z,i,r.')
-
-    # # Lupton RGB Parameters
-    # parser.add_argument('--rgb_minimum', default=1.0, help='The black point for the 3-color image. Default 1.0')
-    # parser.add_argument('--rgb_stretch', default=50.0, help='The linear stretch of the image. Default 50.0.')
-    # parser.add_argument('--rgb_asinh', default=10.0, help='The asinh softening parameter. Default 10.0')
-
-    # # Database access and Bookkeeping
-    # parser.add_argument('--db', default='DESSCI', type=str.upper, required=False, help='Which database to use. Default: DESSCI, Options: DESDR, DESSCI.')
-    # parser.add_argument('--release', default='Y6A1', type=str.upper, required=False, help='Which data release to use. Default: Y6A1. Options: Y6A1, Y3A2, Y3A1, SVA1.')
-    # parser.add_argument('--jobid', required=False, help='Option to manually specify a jobid for this job.')
-    # parser.add_argument('--usernm', required=False, help='Username for database; otherwise uses values from desservices file.')
-    # parser.add_argument('--passwd', required=False, help='Password for database; otherwise uses values from desservices file.')
-    # parser.add_argument('--tiledir', required=False, help='Directory where tiles are stored.')
-    # parser.add_argument('--outdir', required=False, help='Overwrite for output directory.')
-
-    # parser.add_argument('--oracle_service_account_db', required=False, help='Oracle service account database name.')
-    # parser.add_argument('--oracle_service_account_user', required=False, help='Oracle service account username.')
-    # parser.add_argument('--oracle_service_account_pass', required=False, help='Oracle service account password.')

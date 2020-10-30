@@ -1,32 +1,83 @@
-# Data source
+####################################################################
+# Parameters that can be overridden by user-specified configuration
+#
+# CSV-formatted file containing table of (optionally individually configured) 
+# cutout positions. This example shows all possible columns you can include:
+#
+#     RA,DEC,COADD_OBJECT_ID,XSIZE,YSIZE,COLORS_FITS,RGB_STIFF_COLORS,RGB_LUPTON_COLORS,RGB_MINIMUM,RGB_STRETCH,RGB_ASINH,MAKE_FITS,MAKE_RGB_STIFF,MAKE_RGB_LUPTON
+#     46.275669,-34.256000,,0.90,1.30,g,gry;riy,,,,,true,false,true
+#     ,,61407409,1.1,0.8,z,,riy,0.9,40.0,11.0,true,,true
+#
+# This example shows the minimum columns you must include when specifying 
+# positions only by coordinates:
+#
+#     RA,DEC
+#     46.275669,-34.256000
+# 
+# or only by Coadd ID
+#
+#     COADD_OBJECT_ID
+#     61407409
+#     61407435
+# 
+positions:
+# Survey data source database
 db: desdr
+# Survey data release
 release: dr1
-tiledir: auto
-# Database access credentials
+# Cutout dimensions
+xsize: 1.0 
+ysize: 1.0
+# User database credentials
 username:
 password:
+# Path to the directory containing the data tiles
+tiledir: auto
+#
+# FITS cutout image generation
+#
+# Enable (true) or disable (false) FITS file generation
+make_fits: true
+# Color bands to output (string value containing characters from the set 'grizy')
+colors_fits: 'i'
+#
+# RGB image generation using STIFF format
+#
+# Enable (true) or disable (false) RGB file generation in STIFF format
+make_rgb_stiff: false
+# Sets of color band triplets, delineated by semi-colons, denoting by letter ordering
+# the bands to use for Red, Green, Blue in the generated RGB images.
+# Example: 'gri;rig;zgi' will produce three RGB images, where the image color-to-band
+# mapping is:
+#     1) Red: g, Green: r, Blue: i
+#     2) Red: r, Green: i, Blue: g
+#     3) Red: z, Green: g, Blue: i
+rgb_stiff_colors: 'gri'
+#
+# RGB image generation using Lupton method
+#
+# Enable (true) or disable (false) RGB file generation using Lupton format
+make_rgb_lupton: false
+# Sets of color band triplets, delineated by semi-colons, denoting by letter ordering
+# the bands to use for Red, Green, Blue in the generated RGB images. For an example see 
+# "rgb_stiff_colors" above.
+rgb_lupton_colors: 'gri'
+# The black point for the 3-color image
+rgb_minimum: 1.0
+# The linear stretch of the image
+rgb_stretch: 50.0
+# The asinh softening parameter
+rgb_asinh: 10.0
+
+#####################################################################
+# System parameters that can only be overridden by altering this file
+#
+# Minimum and maximum cutout dimensions
+xsize_min: 0.1
+xsize_max: 12.0
+ysize_min: 0.1
+ysize_max: 12.0
+# Oracle service account database name and credentials
 oracle_service_account_db:
 oracle_service_account_user:
 oracle_service_account_pass:
-# System 
-jobid:
-outdir:
-# CSV-formatted file containing table of (optionally individually configured) cutout positions
-positions:
-# Output types
-MAKE_FITS: 1
-MAKE_RGB_LUPTON: 0
-MAKE_RGB_STIFF: 0
-# Default output specs if not included in position table
-XSIZE: 1.0 
-YSIZE: 1.0
-XSIZE_MIN: 0.1
-XSIZE_MAX: 12.0
-YSIZE_MIN: 0.1
-YSIZE_MAX: 12.0
-FITS_COLORS: 'i'
-RGB_STIFF_COLORS: ''
-RGB_LUPTON_COLORS: ''
-RGB_MINIMUM: 1.0
-RGB_STRETCH: 50.0
-RGB_ASINH: 10.0
