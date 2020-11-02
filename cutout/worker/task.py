@@ -115,6 +115,11 @@ def execute_task(config):
 
 def run(config, user_dir='/home/worker/output'):
 
+    # Make the cutout subdirectory if it does not already exist.
+    cutout_dir = os.path.join(user_dir, 'cutout')
+    os.makedirs(cutout_dir, exist_ok=True)
+    config['cutout_dir'] = cutout_dir
+
     # Configure logging
     formatter = logging.Formatter("%(asctime)s  %(name)8s  %(levelname)5s  %(message)s")
     fh = logging.FileHandler(config['metadata']['log'])
@@ -123,11 +128,6 @@ def run(config, user_dir='/home/worker/output'):
     logger.addHandler(fh)
     logger.addHandler(logging.StreamHandler())
     logger.setLevel(logging.INFO)
-
-    # Make the cutout subdirectory if it does not already exist.
-    cutout_dir = os.path.join(user_dir, 'cutout')
-    os.makedirs(cutout_dir, exist_ok=True)
-    config['cutout_dir'] = cutout_dir
 
     # Report to the JobHandler that the job has begun
     task_start(config)
