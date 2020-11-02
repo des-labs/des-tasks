@@ -356,9 +356,29 @@ def run(conf):
     split_df = None
     summary = {}
     if rank == 0:
-        # Record the configuration of the cutout requests
+        # Record the configuration of the cutout requests. Be careful to 
+        # omit sensitive information like passwords.
+        recorded_options = [
+            'jobid',
+            'username',
+            'tiledir',
+            'db',
+            'release',
+            'xsize',
+            'ysize',
+            'colors_fits',
+            'make_fits',
+            'make_rgb_lupton',
+            'make_rgb_stiff',
+            'colors_fits',
+            'rgb_stiff_colors',
+            'rgb_lupton_colors',
+            'rgb_minimum', 
+            'rgb_stretch', 
+            'rgb_asinh',
+        ]
         summary = {
-            'options': {key: value for (key, value) in conf.items() if key != 'password' },
+            'options': {key: value for (key, value) in conf.items() if key in recorded_options },
             'cutouts': user_df,
         }
         # Start a timer for the database query
@@ -493,6 +513,8 @@ def run(conf):
         complete_df = complete_df.drop_duplicates(['RA','DEC'], keep='first')
         complete_df.reset_index(drop=True)
         logger.info('Complete positions table (rank={}):\n{}'.format(rank, complete_df))
+        # Save the cutout positions table to disk
+        complete_df.to_csv(tablename_csv_filepath, index=False)
 
         end1 = time.time()
         query_elapsed = '{0:.2f}'.format(end1-start)
