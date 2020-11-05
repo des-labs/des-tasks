@@ -610,6 +610,11 @@ def run(conf):
         complete_df.reset_index(drop=True)
         # Save the entire table in the job summary file
         summary['cutouts'] = json.loads(complete_df.to_json(orient="records"))
+        # Save the list of unmatched positions
+        summary['unmatched_positions'] = {
+            'coord': unmatched_coords,
+            'coadd': unmatched_coadds,
+        }
 
         logger.info('All processes finished.')
         end2 = time.time()
