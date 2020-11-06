@@ -610,6 +610,9 @@ def run(conf):
         complete_df.reset_index(drop=True)
         # Save the entire table in the job summary file
         summary['cutouts'] = json.loads(complete_df.to_json(orient="records"))
+        # Translate JSON-formatted FILES list to list object type
+        for idx, cutout_position in enumerate(summary['cutouts']):
+            summary['cutouts'][idx]['FILES'] = json.loads(cutout_position['FILES'])
         # Save the list of unmatched positions
         summary['unmatched_positions'] = {
             'coord': unmatched_coords,
