@@ -40,6 +40,9 @@ tiledir: auto
 make_fits: true
 # Color bands to output (string value containing characters from the set 'grizy')
 colors_fits: 'i'
+# Discard FITS files that are only created in order to produce explicitly requested 
+# RGB images. FITS files that are explicitly requested are retained.
+discard_fits_files: false
 #
 # RGB image generation using STIFF format
 #

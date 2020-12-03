@@ -376,6 +376,7 @@ def run(conf):
             'rgb_minimum', 
             'rgb_stretch', 
             'rgb_asinh',
+            'discard_fits_files',
         ]
         summary = {
             'options': {key: value for (key, value) in conf.items() if key in recorded_options },
@@ -557,6 +558,7 @@ def run(conf):
     for row_index, cutout in df.iterrows():
         # Collect all generated files associated with this position
         generated_files = []
+        discard_filepaths = []
         cutout['SIZE'] = units.Quantity((cutout['YSIZE'], cutout['XSIZE']), units.arcmin)
         cutout['POSITION'] = SkyCoord(cutout['ALPHAWIN_J2000'], cutout['DELTAWIN_J2000'], frame='icrs', unit='deg', equinox='J2000', representation_type='spherical')
 
@@ -573,15 +575,30 @@ def run(conf):
 
         # Make all FITS cutout files necessary for requested FITS files and any RGB files
         all_colors = ''
+        fits_colors = ''
+        rgb_colors = ''
+        # The order matters here, because explicitly requested FITS files may be discarded if the RGB colors are iterated over first
         for rgb_type in [['MAKE_FITS', 'COLORS_FITS'], ['MAKE_RGB_STIFF', 'RGB_STIFF_COLORS'], ['MAKE_RGB_LUPTON', 'RGB_LUPTON_COLORS']]:
             if cutout[rgb_type[0]]:
                 # Add the color if it is an acceptable letter do not duplicate
                 for color in cutout[rgb_type[1]]:
                     if color in 'grizy' and color not in all_colors:
                         all_colors += color
-        output_files = make_fits_cut(cutout, all_colors, cutout_outdir, cutout_basename)
-        generated_files.extend(output_files)
-        all_generated_files.extend(output_files)
+                        if rgb_type[0] == 'MAKE_FITS':
+                            fits_colors += color
+                        else:
+                            rgb_colors += color
+
+        output_fits_files_requested = make_fits_cut(cutout, fits_colors, cutout_outdir, cutout_basename)
+        output_fits_files_for_rgb_only = make_fits_cut(cutout, rgb_colors, cutout_outdir, cutout_basename)
+        generated_files.extend(output_fits_files_requested)
+        all_generated_files.extend(output_fits_files_requested)
+        if cutout['DISCARD_FITS_FILES']:
+            for fits_filename in output_fits_files_for_rgb_only:
+                discard_filepaths.append(os.path.join(cutout_outdir, fits_filename))
+        else:
+            generated_files.extend(output_fits_files_for_rgb_only)
+            all_generated_files.extend(output_fits_files_for_rgb_only)
 
         # Now that all required FITS files have been generated, create any requested RGB images
         for rgb_type in [['MAKE_RGB_STIFF', 'RGB_STIFF_COLORS'], ['MAKE_RGB_LUPTON', 'RGB_LUPTON_COLORS']]:
@@ -596,8 +613,15 @@ def run(conf):
         file_list = json.loads(cutout['FILES'])
         df.at[row_index, 'FILES'] = json.dumps(file_list + generated_files)
 
+        # Delete FITS files that were generated only for the purpose of producing RGB images
+        if cutout['DISCARD_FITS_FILES']:
+            for filepath in discard_filepaths:
+                os.remove(filepath)
+
+
     # Close database connection
     conn.close()
+
     # Synchronize parallel processes at this line to ensure all processing is complete
     comm.Barrier()
     # Gather all sub-tables back into one unified table
@@ -677,7 +701,7 @@ def construct_cutouts_table(conf):
         sys.exit(1)
 
     # Ensure that each parameter column is populated in the DataFrame
-    for param in ['xsize', 'ysize', 'colors_fits', 'rgb_stiff_colors', 'rgb_lupton_colors', 'make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
+    for param in ['xsize', 'ysize', 'colors_fits', 'rgb_stiff_colors', 'rgb_lupton_colors', 'make_fits', 'make_rgb_lupton', 'make_rgb_stiff', 'discard_fits_files']:
         # If the parameter was not included in the CSV file
         if not param in df:
             # Check if a global default was provided by the user.
@@ -735,7 +759,7 @@ def construct_cutouts_table(conf):
         # Ensure that colors are set correctly if output boolean flags are set.
         # The default values are true booleans, but the cutout positions table
         # values are pseudo-boolean numeric values. Translate accordingly.
-        for param in ['make_fits', 'make_rgb_stiff', 'make_rgb_lupton']:
+        for param in ['make_fits', 'make_rgb_stiff', 'make_rgb_lupton', 'discard_fits_files']:
             if not param in cutout or math.isnan(cutout[param]):
                 # Check if a global default was provided by the user.
                 if param in conf:
@@ -780,6 +804,7 @@ def positions_csv_to_dataframe(positions_csv_text):
             'make_fits': np.float64,
             'make_rgb_stiff': np.float64,
             'make_rgb_lupton': np.float64,
+            'discard_fits_files': np.float64,
             'rgb_minimum': np.float64,
             'rgb_stretch': np.float64,
             'rgb_asinh': np.float64,
@@ -796,6 +821,7 @@ def positions_csv_to_dataframe(positions_csv_text):
             'make_fits': '',
             'make_rgb_stiff': '',
             'make_rgb_lupton': '',
+            'discard_fits_files': '',
             'rgb_minimum': '',
             'rgb_stretch': '',
             'rgb_asinh': '',
@@ -895,7 +921,7 @@ def validate_user_defaults(conf):
                 return False, 'Cutout size maximum value is {}'.format(defaults['{}_max'.format(param)])
 
     # Validate default boolean flags for which images to produce
-    for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
+    for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff', 'discard_fits_files']:
         if param in conf:
             if not isinstance(conf[param], bool):
                 return False, '"{}" must be a boolean value'.format(param)
@@ -924,7 +950,7 @@ def validate_positions_table(positions_csv_text):
         'coadd_object_id',
         'xsize',
         'ysize',
-        'fits_colors',
+        'colors_fits',
         'rgb_stiff_colors',
         'rgb_lupton_colors',
         'rgb_minimum',
@@ -933,6 +959,7 @@ def validate_positions_table(positions_csv_text):
         'make_fits',
         'make_rgb_stiff',
         'make_rgb_lupton',
+        'discard_fits_files',
     ]
     try:
         # Import the table as a DataFrame
@@ -979,7 +1006,7 @@ def validate_positions_table(positions_csv_text):
                 if param_max in defaults and cutout[param] > defaults[param_max]:
                     return False, 'Parameter "{}" is too large: maximum valid value is "{}"'.format(param, param_max)
         # Validate boolean flags for which images to produce
-        for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff']:
+        for param in ['make_fits', 'make_rgb_lupton', 'make_rgb_stiff', 'discard_fits_files']:
             if param in cutout:
                 if not math.isnan(cutout[param]) and not isinstance(cutout[param], (int, float)) :
                     return False, '"{}" must have value 0 (disabled) or 1 (enabled) if provided in the cutout positions table.'.format(param)
