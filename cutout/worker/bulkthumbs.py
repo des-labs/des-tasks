@@ -534,14 +534,14 @@ def run(conf):
     # Determine the file paths for each unique relevant tile  
     for tilename in df['TILENAME'].unique():
         try:
-            if conf['tiledir'] != 'auto':
+            if conf['tiledir'].lower() != 'auto':
                 tiledir = os.path.join(conf.tiledir, tilename)
             else:
                 dftile = conn.query_to_pandas(qtemplate.format(table_path, tilename))
                 tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
-                if conf['release'] in ('Y6A1', 'Y3A2', 'DR1'):
+                if conf['release'].upper() in ('Y6A1', 'Y3A2', 'DR1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
-                elif conf['release'] in ('SVA1', 'Y1A1'):
+                elif conf['release'].upper() in ('SVA1', 'Y1A1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
             # Clean up path formatting
             tiledir = os.path.join(tiledir, '')
