@@ -149,9 +149,14 @@ def make_rgb(cutout, rgb_type, color_set, outdir, basename):
         os.makedirs(outdir, exist_ok=True)
         # TODO: Verify that the comparison of generated size to the requested size is redundant since 
         # this is logged in the FITS cutout file generation
-        r_data = fits.getdata(fits_file_list[0], 'SCI')
-        g_data = fits.getdata(fits_file_list[1], 'SCI')
-        b_data = fits.getdata(fits_file_list[2], 'SCI')
+        try:
+            r_data = fits.getdata(fits_file_list[0], 'SCI')
+            g_data = fits.getdata(fits_file_list[1], 'SCI')
+            b_data = fits.getdata(fits_file_list[2], 'SCI')
+        except:
+            r_data = fits.getdata(fits_file_list[0], 'IMAGE')
+            g_data = fits.getdata(fits_file_list[1], 'IMAGE')
+            b_data = fits.getdata(fits_file_list[2], 'IMAGE')
         # Generate RGB image from three FITS file data
         image = mlrgb(
             # FITS file data
@@ -255,7 +260,11 @@ def make_fits_cut(cutout, colors, outdir, basename):
                 new_hdu = fits.PrimaryHDU(data=cutout_2D.data, header=header)
                 pixelscale = utils.proj_plane_pixel_scales(wcs)
             else:
-                new_hdu = fits.ImageHDU(data=cutout_2D.data, header=header, name=header['EXTNAME'])
+                try:
+                    new_hdu = fits.ImageHDU(data=cutout_2D.data, header=header, name=header['EXTNAME'])
+                except:
+                    new_hdu = fits.ImageHDU(data=cutout_2D.data, header=header, name=header['XTENSION'])
+                    
             new_hdu_list.append(new_hdu)
         # Check the size of the cutout compared to the requested size and warn if different
         if pixelscale is not None:
@@ -588,11 +597,12 @@ def run(conf):
                             fits_colors += color
                         else:
                             rgb_colors += color
-
+  
         output_fits_files_requested = make_fits_cut(cutout, fits_colors, cutout_outdir, cutout_basename)
         output_fits_files_for_rgb_only = make_fits_cut(cutout, rgb_colors, cutout_outdir, cutout_basename)
         generated_files.extend(output_fits_files_requested)
         all_generated_files.extend(output_fits_files_requested)
+        
         if cutout['DISCARD_FITS_FILES']:
             for fits_filename in output_fits_files_for_rgb_only:
                 discard_filepaths.append(os.path.join(cutout_outdir, fits_filename))
