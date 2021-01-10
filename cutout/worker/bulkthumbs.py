@@ -51,7 +51,7 @@ VALID_DATA_SOURCES = {
         'DR2',
     ],
     'DESSCI': [
-        'Y6A1',
+        'Y6A2',
         'Y3A2',
         'Y1A1',
         'SVA1',
@@ -410,8 +410,8 @@ def run(conf):
             catalog_coord = 'Y3A2_COADDTILE_GEOM'
             catalog_coadd = 'Y3A2_COADD_OBJECT_SUMMARY'
         elif conf['db'].upper() == 'DESDR':
-            catalog_coord = 'DR1_Tile_INFO'
-            catalog_coadd = 'DR1_MAIN'
+            catalog_coord = '{}_TILE_INFO'.format(conf['release'].upper())
+            catalog_coadd = '{}_MAIN'.format(conf['release'].upper())
         else:
             logger.error('Invalid database.')
             sys.exit(1)
@@ -540,7 +540,7 @@ def run(conf):
             else:
                 dftile = conn.query_to_pandas(qtemplate.format(table_path, tilename))
                 tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
-                if conf['release'].upper() in ('Y6A1', 'Y3A2', 'DR1'):
+                if conf['release'].upper() in ('Y6A2', 'Y3A2', 'DR1', 'DR2'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
                 elif conf['release'].upper() in ('SVA1', 'Y1A1'):
                     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
