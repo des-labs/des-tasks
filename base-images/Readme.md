@@ -1,7 +1,7 @@
 Base images
 ============================
 
-The base images must be built **before running the deployment script** (at least until they are properly integrated into the reproducible build workflow, at which time this message will be removed).
+The base images are required by several Docker images used by DESaccess that require the `easyaccess` package. They are automatically built via the `https://gitlab.com/des-labs/deployment/-/tree/master/apps/desaccess/common/build/scripts/prebuild.sh` hook script that is executed by the deployment script. Use the following sequence to build them manually.
 
 First build the Oracle client base image:
 ```
