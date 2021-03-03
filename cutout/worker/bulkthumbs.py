@@ -417,10 +417,19 @@ def run(conf):
         # Define the catalogs to query based on the chosen database
         if conf['db'].upper() == 'DESSCI':
             catalog_coord = 'Y3A2_COADDTILE_GEOM'
-            catalog_coadd = 'Y3A2_COADD_OBJECT_SUMMARY'
+            if conf['release'].upper() in ['Y1A1', 'SVA1']:
+                catalog_coadd = '{}_COADD_OBJECTS'.format(conf['release'].upper())
+                catalog_coadd_id_column_name = 'COADD_OBJECTS_ID'
+            elif conf['release'].upper() in ['Y3A2', 'Y6A2']:
+                catalog_coadd = '{}_COADD_OBJECT_SUMMARY'.format(conf['release'].upper())
+                catalog_coadd_id_column_name = 'COADD_OBJECT_ID'
+            else:
+                logger.error('Invalid release.')
+                sys.exit(1)
         elif conf['db'].upper() == 'DESDR':
             catalog_coord = '{}_TILE_INFO'.format(conf['release'].upper())
             catalog_coadd = '{}_MAIN'.format(conf['release'].upper())
+            catalog_coadd_id_column_name = 'COADD_OBJECT_ID'
         else:
             logger.error('Invalid database.')
             sys.exit(1)
@@ -475,8 +484,8 @@ def run(conf):
             query = '''
                 select temp.COADD_OBJECT_ID, temp.XSIZE, temp.YSIZE, m.ALPHAWIN_J2000, m.DELTAWIN_J2000, m.RA, m.DEC, m.TILENAME
                 from {tablename} temp 
-                left outer join {catalog} m on temp.COADD_OBJECT_ID=m.COADD_OBJECT_ID
-            '''.format(tablename=tablename.upper(), catalog=catalog_coadd)
+                left outer join {catalog} m on temp.COADD_OBJECT_ID=m.{catalog_coadd_id_column_name}
+            '''.format(tablename=tablename.upper(), catalog=catalog_coadd, catalog_coadd_id_column_name=catalog_coadd_id_column_name)
             
             # Overwrite DataFrame with extended table that has tilenames
             coadd_query_df = conn.query_to_pandas(query)
