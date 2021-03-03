@@ -416,11 +416,12 @@ def run(conf):
 
         # Define the catalogs to query based on the chosen database
         if conf['db'].upper() == 'DESSCI':
-            catalog_coord = 'Y3A2_COADDTILE_GEOM'
             if conf['release'].upper() in ['Y1A1', 'SVA1']:
+                catalog_coord = 'Y3A2_COADDTILE_GEOM'
                 catalog_coadd = '{}_COADD_OBJECTS'.format(conf['release'].upper())
                 catalog_coadd_id_column_name = 'COADD_OBJECTS_ID'
             elif conf['release'].upper() in ['Y3A2', 'Y6A2']:
+                catalog_coord = '{}_COADDTILE_GEOM'.format(conf['release'].upper())
                 catalog_coadd = '{}_COADD_OBJECT_SUMMARY'.format(conf['release'].upper())
                 catalog_coadd_id_column_name = 'COADD_OBJECT_ID'
             else:
