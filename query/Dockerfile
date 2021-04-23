@@ -1,4 +1,4 @@
-FROM easyaccessclient:latest
+FROM hub.ncsa.illinois.edu/des/easyaccessclient:latest
 
 # Next, install the required Python modules:
 USER worker
