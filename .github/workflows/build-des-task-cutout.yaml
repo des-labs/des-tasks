@@ -6,6 +6,7 @@ on:
       - 'master'
     paths:
     - 'cutout/**'
+  workflow_dispatch:
 
 jobs:
   docker:
