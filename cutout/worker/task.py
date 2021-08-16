@@ -9,6 +9,7 @@ import subprocess
 import glob
 import shutil
 import json
+import time
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -53,13 +54,21 @@ def task_complete(config, response):
 
     # logger.info("Cutout response:\n{}".format(response))
 
-    requests.post(
-        '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
-        json={
-            'apitoken': config['metadata']['apiToken'],
-            'response': response
-        }
-    )
+    fail_count = 0
+    while fail_count <= 5:
+        completeResponse = requests.post(
+            '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
+            json={
+                'apitoken': config['metadata']['apiToken'],
+                'response': response
+            }
+        )
+        
+        if completeResponse.status_code == 200:
+            break
+        else:
+            fail_count += 1
+            time.sleep(1)
 
 
 def execute_task(config):
