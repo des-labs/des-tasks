@@ -38,7 +38,7 @@ tiledir: auto
 #
 # Enable (true) or disable (false) FITS file generation
 make_fits: true
-# Color bands to output (string value containing characters from the set 'grizy')
+# Color bands to output (string value containing characters from the set 'yzirg')
 colors_fits: 'i'
 # Discard FITS files that are only created in order to produce explicitly requested 
 # RGB images. FITS files that are explicitly requested are retained.
@@ -50,12 +50,12 @@ discard_fits_files: false
 make_rgb_stiff: false
 # Sets of color band triplets, delineated by semi-colons, denoting by letter ordering
 # the bands to use for Red, Green, Blue in the generated RGB images.
-# Example: 'gri;rig;zgi' will produce three RGB images, where the image color-to-band
+# Example: 'irg;yzi;yig' will produce three RGB images, where the image color-to-band
 # mapping is:
-#     1) Red: g, Green: r, Blue: i
-#     2) Red: r, Green: i, Blue: g
-#     3) Red: z, Green: g, Blue: i
-rgb_stiff_colors: 'gri'
+#     1) Red: i, Green: r, Blue: g
+#     2) Red: y, Green: z, Blue: i
+#     3) Red: y, Green: i, Blue: g
+rgb_stiff_colors: 'irg'
 #
 # RGB image generation using Lupton method
 #
@@ -64,7 +64,7 @@ make_rgb_lupton: false
 # Sets of color band triplets, delineated by semi-colons, denoting by letter ordering
 # the bands to use for Red, Green, Blue in the generated RGB images. For an example see 
 # "rgb_stiff_colors" above.
-rgb_lupton_colors: 'gri'
+rgb_lupton_colors: 'irg'
 # The black point for the 3-color image
 rgb_minimum: 1.0
 # The linear stretch of the image
