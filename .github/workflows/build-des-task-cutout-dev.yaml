@@ -6,6 +6,7 @@ on:
       - 'dev'
     paths:
     - 'cutout/**'
+  workflow_dispatch:
 
 jobs:
   docker:

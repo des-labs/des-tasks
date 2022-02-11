@@ -6,6 +6,7 @@ on:
       - 'dev'
     paths:
     - 'query/**'
+  workflow_dispatch:
 
 jobs:
   docker:
