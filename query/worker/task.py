@@ -5,6 +5,7 @@ import os
 import requests
 import ea_tasks
 import rpdb
+import time
 
 
 def task_start(config):
@@ -18,14 +19,27 @@ def task_start(config):
 
 
 def task_complete(config, response):
-    # Report that work has completed
-    requests.post(
-        '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
-        json={
-            'apitoken': config['metadata']['apiToken'],
-            'response': response
-        }
-    )
+    if response['msg'] == 'preStop pod lifecycle hook triggered':
+        logging.warning(f'''{response['msg']} for query job {config['metadata']['name']}''')
+    ## Report that work has completed
+    ## Try to post job completion data to API server multiple times in the
+    ## event that something temporarily disrupts the HTTP request
+    fail_count = 0
+    while fail_count <= 5:
+        try:
+            completeResponse = requests.post(
+                '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
+                json={
+                    'apitoken': config['metadata']['apiToken'],
+                    'response': response
+                }
+            )
+            if completeResponse.status_code == 200:
+                break
+        except Exception as e:
+            logging.error(f'''Error posting job completion to API server: {e}''')
+        fail_count += 1
+        time.sleep(1)
 
 
 def execute_task(config):

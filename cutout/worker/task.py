@@ -51,24 +51,31 @@ def task_complete(config, response):
             response['summary'] = json.load(summary_file)
     except Exception as e:
         logger.error('Error loading "summary.json": {}'.format(str(e).strip()))
+        response['status'] = STATUS_ERROR
+        msg = 'Error loading job summary file. Job might not be complete.'
+        if response['msg'] == 'preStop pod lifecycle hook triggered':
+            response['msg'] = f'''{msg} {response['msg']}.'''
+        else:
+            response['msg'] = msg
 
-    # logger.info("Cutout response:\n{}".format(response))
-
+    ## Try to post job completion data to API server multiple times in the
+    ## event that something temporarily disrupts the HTTP request
     fail_count = 0
     while fail_count <= 5:
-        completeResponse = requests.post(
-            '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
-            json={
-                'apitoken': config['metadata']['apiToken'],
-                'response': response
-            }
-        )
-        
-        if completeResponse.status_code == 200:
-            break
-        else:
-            fail_count += 1
-            time.sleep(1)
+        try:
+            completeResponse = requests.post(
+                '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
+                json={
+                    'apitoken': config['metadata']['apiToken'],
+                    'response': response
+                }
+            )
+            if completeResponse.status_code == 200:
+                break
+        except Exception as e:
+            logger.error(f'''Error posting job completion to API server: {e}''')
+        fail_count += 1
+        time.sleep(1)
 
 
 def execute_task(config):
