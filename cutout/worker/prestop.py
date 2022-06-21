@@ -1,5 +1,5 @@
 import yaml
-import requests
+from task import task_complete
 
 STATUS_OK = 'ok'
 STATUS_ERROR = 'error'
@@ -15,12 +15,8 @@ with open('configjob.yaml') as cfile:
 # This preStop pod lifecycle hook function should only execute if Kubernetes
 # prematurely terminates it
 response = DEFAULT_RESPONSE
-response['status'] = STATUS_ERROR
+## Do not report the job status as an error, since evidence suggests that some
+## jobs whose preStop hooks are triggered are actually successful and complete.
+# response['status'] = STATUS_ERROR
 response['msg'] = 'preStop pod lifecycle hook triggered'
-requests.post(
-    '{}/job/complete'.format(config['metadata']['apiBaseUrl']),
-    json={
-        'apitoken': config['metadata']['apiToken'],
-        'response': response
-    }
-)
+task_complete(config, response)
