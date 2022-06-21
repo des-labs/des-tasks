@@ -1,4 +1,4 @@
-FROM hub.ncsa.illinois.edu/des/easyaccess:latest
+FROM registry.gitlab.com/des-labs/kubernetes/easyaccess:1.4.10
 
 # Next, install the required Python modules:
 USER worker
