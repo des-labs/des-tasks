@@ -1,4 +1,8 @@
-FROM registry.gitlab.com/des-labs/kubernetes/easyaccess:1.4.10
+FROM registry.gitlab.com/des-labs/kubernetes/easyaccess:1.4.11
+
+ARG UID=68586
+ARG GID=2402
+RUN groupmod -g ${GID} worker && usermod -u ${UID} -g ${GID} worker
 
 # Next, install the required Python modules:
 USER worker
