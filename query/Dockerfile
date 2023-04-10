@@ -1,4 +1,4 @@
-FROM registry.gitlab.com/des-labs/kubernetes/easyaccess:1.4.11
+FROM registry.gitlab.com/des-labs/kubernetes/easyaccess:1.4.12
 
 ARG UID=68586
 ARG GID=2402
