@@ -52,9 +52,9 @@ VALID_DATA_SOURCES = {
     ],
     'DESSCI': [
         'Y6A2',
-        'Y3A2',
-        'Y1A1',
-        'SVA1',
+        # 'Y3A2',
+        # 'Y1A1',
+        # 'SVA1',
     ]
 }
 
