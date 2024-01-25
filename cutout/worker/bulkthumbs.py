@@ -233,6 +233,7 @@ def make_fits_cut(cutout, colors, outdir, basename):
         except IndexError as e:
             print('No FITS file in {0} color band found. Will not create cutouts in this band.'.format(color))
             logger.error('MakeFitsCut - No FITS file in {0} color band found. Will not create cutouts in this band.'.format(color))
+            logger.error(f'''{e}''')
             continue        # Just go on to the next color in the list
         
         # # Mark time for FITS file opened
@@ -556,12 +557,14 @@ def run(conf):
             if conf['tiledir'].lower() != 'auto':
                 tiledir = os.path.join(conf.tiledir, tilename)
             else:
-                dftile = conn.query_to_pandas(qtemplate.format(table_path, tilename))
-                tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
-                if conf['release'].upper() in ('Y6A2', 'Y3A2', 'DR1', 'DR2'):
-                    tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
-                elif conf['release'].upper() in ('SVA1', 'Y1A1'):
-                    tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
+                # dftile = conn.query_to_pandas(qtemplate.format(table_path, tilename))
+                # tiledir = os.path.dirname(dftile.FITS_IMAGES.iloc[0])
+                # if conf['release'].upper() in ('Y6A2', 'Y3A2', 'DR1', 'DR2'):
+                #     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desarchive/OPS/', '/des003/desarchive/') + '/'
+                # elif conf['release'].upper() in ('SVA1', 'Y1A1'):
+                #     tiledir = tiledir.replace('https://desar2.cosmology.illinois.edu/DESFiles/desardata/OPS/coadd/', '/des004/coadd/') + '/'
+                if conf['release'].upper() in ('Y6A2'):
+                    tiledir = f'''/tiles/dr2/{tilename}/'''
             # Clean up path formatting
             tiledir = os.path.join(tiledir, '')
             # Store tiledir in table 
