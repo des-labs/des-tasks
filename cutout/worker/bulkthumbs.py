@@ -458,7 +458,7 @@ def run(conf):
                     m.CROSSRA0='Y' and 
                     (temp.RA_ADJUSTED between m.URAMIN-360 and m.URAMAX) and 
                     (temp.DEC between m.UDECMIN and m.UDECMAX)
-                )
+                ) and m.ID < 200000
             '''.format(tablename=tablename.upper(), catalog=catalog_coord)
             
             # Overwrite DataFrame with extended table that has tilenames
